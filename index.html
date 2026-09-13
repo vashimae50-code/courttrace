@@ -97,7 +97,11 @@ aside h3 .hint{margin-left:auto;letter-spacing:0;text-transform:none;font-size:1
 .prow:hover{background:var(--panel2)}
 .prow.sel{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
 .prow .num{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:18px;width:36px;text-align:center;border:1px solid transparent;border-radius:4px;background:transparent;padding:0}
-.prow .num:hover,.prow .num:focus{border-color:var(--line);background:var(--panel)}
+.prow .num{border-color:var(--line);background:var(--panel);cursor:text}
+.prow .num:hover,.prow .num:focus{border-color:var(--accent);background:var(--panel)}
+.bulk{display:flex;gap:6px;padding:6px 8px;border-top:1px solid var(--line);background:var(--panel2)}
+.bulk input{flex:1;min-width:0;border:1px solid var(--line);border-radius:5px;padding:4px 6px;background:var(--panel)}
+.team-h .btn.sm{padding:2px 6px;font-size:11px}
 .prow .st{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px}
 .prow .st::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--line)}
 .prow .st.vis::before{background:var(--ok)}
@@ -228,7 +232,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
       <div id="tabTrack" style="display:contents">
       <section>
         <h3>解析する区間 <span class="hint">1プレー 10〜20秒が目安</span></h3>
-        <div class="actions"><button class="btn sm" id="segStartBtn">ここから</button><button class="btn sm" id="segEndBtn">ここまで</button><span class="seglbl" id="segLabel">未設定</span><button class="btn sm" id="segClearBtn" hidden>解除</button></div>
+        <div class="actions"><button class="btn sm" id="seg15Btn" title="現在時刻から15秒間を区間にする">ここから15秒</button><button class="btn sm" id="segStartBtn">ここから</button><button class="btn sm" id="segEndBtn">ここまで</button><span class="seglbl" id="segLabel">未設定</span><button class="btn sm" id="segClearBtn" hidden>解除</button></div>
         <div class="actions" style="margin-top:6px"><button class="btn sm" id="scanBtn">区間を一括自動追跡（AI）</button></div>
         <p class="note" id="scanNote">スキャン後は、動画に出る枠を（選手を選んでから）クリックするだけで、その人が映っている間の動きがまとめて入ります。手元の動画ファイルのみ対応。</p>
       </section>
@@ -804,7 +808,8 @@ function coverage(kfs){ const g=seg(); if(!g) return null; let cov=0,n=0; for(le
 function uncoveredSec(kfs){ const g=seg(); if(!g) return 0; let u=0; for(let t=g.a;t<=g.b+1e-6;t+=0.25){ if(!kfs.some(k=>Math.abs(k.t-t)<=1.5)) u+=0.25; } return u; }
 function renderSeg(){ const g=P().settings.seg||{}; const lbl=$('#segLabel'); if(g.a==null&&g.b==null){ lbl.textContent='未設定'; } else lbl.textContent=(g.a!=null?fmt(g.a):'?')+' 〜 '+(g.b!=null?fmt(g.b):'?')+(seg()?` (${(g.b-g.a).toFixed(0)}秒)`:''); $('#segClearBtn').hidden=(g.a==null&&g.b==null); }
 $('#segStartBtn').addEventListener('click',()=>{ const g=P().settings.seg||(P().settings.seg={}); g.a=now(); if(g.b!=null&&g.b<=g.a) g.b=null; scheduleSave(); renderSeg(); renderRoster(); toast('区間の開始を '+fmt(g.a)+' にしました。プレーの終わりまで進めて「ここまで」'); });
-$('#segEndBtn').addEventListener('click',()=>{ const g=P().settings.seg||(P().settings.seg={}); if(g.a==null){ g.a=Math.max(0,now()-15); } g.b=now(); if(g.b<=g.a) return toast('終了は開始より後の時刻にしてください'); scheduleSave(); renderSeg(); renderRoster(); toast(`区間 ${fmt(g.a)}〜${fmt(g.b)}（${(g.b-g.a).toFixed(0)}秒）。1人あたり約 ${Math.ceil((g.b-g.a)/1.5)} 回のクリックが目安です`,5000); seek(g.a); });
+$('#segEndBtn').addEventListener('click',()=>{ const g=P().settings.seg||(P().settings.seg={}); if(g.a==null){ g.a=Math.max(0,now()-15); } g.b=now(); if(g.b<=g.a) return toast('終了は開始より後の時刻にしてください'); scheduleSave(); renderSeg(); renderRoster(); if(g.b-g.a>60) toast(`区間が ${Math.round(g.b-g.a)} 秒と長すぎます。手入力なら1プレー（10〜20秒）に絞ることを強くおすすめします（「解除」→「ここから15秒」）`,7000); else toast(`区間 ${fmt(g.a)}〜${fmt(g.b)}（${(g.b-g.a).toFixed(0)}秒）。1人あたり約 ${Math.ceil((g.b-g.a)/1.5)} 回のクリックが目安です`,5000); seek(g.a); });
+$('#seg15Btn').addEventListener('click',()=>{ const a=now(); const b=Math.min(S.source?S.source.duration||a+15:a+15,a+15); if(b-a<2) return toast('動画の終わり近くです。少し戻してから押してください'); P().settings.seg={a,b}; S.scan=null; scheduleSave(); renderSeg(); renderRoster(); toast(`区間 ${fmt(a)}〜${fmt(b)}（${Math.round(b-a)}秒）にしました。まずはこの範囲だけ入力します`,4000); });
 $('#segClearBtn').addEventListener('click',()=>{ P().settings.seg=null; S.scan=null; scheduleSave(); renderSeg(); renderRoster(); });
 
 // ───────────────────────── roster UI
@@ -813,17 +818,25 @@ function renderRoster(){
   const host=$('#roster'); host.innerHTML=''; const t=now();
   for(const team of ['A','B']){
     const T=P().teams[team]; const box=document.createElement('div'); box.className='team';
-    const h=document.createElement('div'); h.className='team-h'; h.innerHTML=`<span class="sw" style="background:${T.color}"></span><input value="${T.name}" aria-label="チーム名"><input type="color" value="${T.color}" style="width:22px;height:22px;padding:0;border:0;background:none;flex:none" aria-label="色">`;
+    const h=document.createElement('div'); h.className='team-h'; h.innerHTML=`<span class="sw" style="background:${T.color}"></span><input value="${T.name}" aria-label="チーム名"><button class="btn sm" title="背番号をまとめて入力">番号一括</button><input type="color" value="${T.color}" style="width:22px;height:22px;padding:0;border:0;background:none;flex:none" aria-label="色">`;
     const [nameIn,colIn]=h.querySelectorAll('input'); nameIn.addEventListener('change',()=>{T.name=nameIn.value; scheduleSave(); applySettingsUI();}); colIn.addEventListener('input',()=>{T.color=colIn.value; h.querySelector('.sw').style.background=T.color; scheduleSave();});
     box.appendChild(h);
+    const bulk=document.createElement('div'); bulk.className='bulk'; bulk.hidden=!(S.bulkOpen===team); bulk.innerHTML=`<input placeholder="背番号を空白区切りで 例: 4 7 11 15 23" aria-label="背番号一括"><button class="btn sm">適用</button>`;
+    const bulkIn=bulk.querySelector('input'); const applyBulk=()=>{ const nums=bulkIn.value.split(/[^0-9０-９]+/).map(x=>x.replace(/[０-９]/g,d=>String.fromCharCode(d.charCodeAt(0)-0xFEE0))).filter(Boolean); if(!nums.length) return toast('背番号を空白区切りで入力してください'); const old=P().players.filter(p=>p.team===team); const others=P().players.filter(p=>p.team!==team); const fresh=nums.map((n,i)=>{ const keep=old.find(p=>p.num===n)||old[i]; return {id:keep?keep.id:team+uid(),team,num:n,kfs:keep?keep.kfs:[]}; }); P().players=team==='A'?[...fresh,...others]:[...others,...fresh]; S.bulkOpen=null; scheduleSave(); renderRoster(); toast(`${T.name}: ${nums.length}人の背番号を設定しました`); };
+    bulk.querySelector('button').addEventListener('click',applyBulk); bulkIn.addEventListener('keydown',e=>{ if(e.key==='Enter') applyBulk(); if(e.key==='Escape'){ S.bulkOpen=null; renderRoster(); } });
+    h.querySelector('.btn').addEventListener('click',()=>{ S.bulkOpen=S.bulkOpen===team?null:team; renderRoster(); setTimeout(()=>{ const b=$('#roster .bulk:not([hidden]) input'); if(b){ b.value=P().players.filter(p=>p.team===team).map(p=>p.num).join(' '); b.focus(); b.select(); } },0); });
+    box.appendChild(bulk);
     for(const p of P().players.filter(p=>p.team===team)){
       const row=document.createElement('div'); row.className='prow'+(S.selected===p.id?' sel':''); const pos=playerPos(p,t); const hasK=p.kfs.length>0;
       const cv=coverage(p.kfs); if(cv!=null&&cv>=0.9) row.classList.add('done');
       row.innerHTML=`<input class="num" value="${p.num}" maxlength="3" aria-label="背番号"><span class="st ${pos?'vis':hasK?'hid':''}">${pos?'表示中':hasK?'画面外':'未入力'}</span><span class="kfc">${cv!=null?Math.round(cv*100)+'%':p.kfs.length+'KF'}</span><button class="x" title="削除">×</button>`;
       if(cv!=null) row.style.background=`linear-gradient(90deg, rgba(58,157,93,.18) ${Math.round(cv*100)}%, transparent ${Math.round(cv*100)}%)`;
       row.addEventListener('click',e=>{ if(e.target.closest('input,button')) return; S.selected=p.id; renderRoster(); });
-      const num=row.querySelector('.num'); num.addEventListener('change',()=>{ p.num=num.value.trim()||p.num; num.value=p.num; scheduleSave(); });
-      num.addEventListener('focus',()=>{ S.selected=p.id; $$('.prow').forEach(r=>r.classList.remove('sel')); row.classList.add('sel'); });
+      const num=row.querySelector('.num'); num.title='クリックして背番号を入力（Enterで確定）';
+      num.addEventListener('input',()=>{ const v=num.value.trim(); if(v){ p.num=v; scheduleSave(); } });
+      num.addEventListener('change',()=>{ p.num=num.value.trim()||p.num; num.value=p.num; scheduleSave(); });
+      num.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); num.blur(); } e.stopPropagation(); });
+      num.addEventListener('focus',()=>{ S.selected=p.id; $$('.prow').forEach(r=>r.classList.remove('sel')); row.classList.add('sel'); setTimeout(()=>num.select(),0); });
       row.querySelector('.x').addEventListener('click',()=>{ P().players=P().players.filter(q=>q!==p); if(S.selected===p.id) S.selected=null; scheduleSave(); renderRoster(); });
       box.appendChild(row);
     }
@@ -887,6 +900,7 @@ function renderWizard(){
     $('#wizCur').textContent='次は右コート。右コートが映っている時刻まで動画を進めてから、下のボタンを押してください。';
     mk('右の位置合わせスタート（この時刻から）',wizStartRightShift,true);
     mk('同じ場面に右も映っている → 続けて右を置く',wizStartRightSame);
+    mk('右コートは後で → 追跡へ進む',()=>{ S.wiz.phase='done'; S.lm=null; setVMode('track'); toast('左コートだけで進めます。右コートが映る場面を扱うときは「目印を置く」→「この時刻で新規」で追加できます。',6000); });
   }
 }
 $('#calibModeBtn').addEventListener('click',wizBegin);
@@ -1160,9 +1174,10 @@ function guideState(){
   if(S.selected && !entity(S.selected)) S.selected=null;
   const g=seg(); const sg=P().settings.seg||{};
   if(!g){ if(sg.a!=null) return {n:3,text:`区間の開始は ${fmt(sg.a)}。プレーの終わりまで動画を進めて「ここまで」を押してください。長いほど入力が増えるので、まずは10〜20秒がおすすめです。`,action:['ここまで（現在時刻）',()=>$('#segEndBtn').click()]};
-    return {n:3,text:'先に「どのプレーを起こすか」を決めます。解析したいプレーの始まりの時刻で「ここから」、終わりで「ここまで」。この区間の中だけ入力すれば完了です（全部の時間を入力する必要はありません）。',action:['ここから（現在時刻）',()=>$('#segStartBtn').click()]}; }
+    return {n:3,text:'先に「どのプレーを起こすか」を決めます。起こしたい場面の始まりまで動画を進めて「ここから15秒」を押すのが最短です（「ここから」「ここまで」で自由に指定もできます）。この区間の中だけ入力すれば完了で、動画全体を入力する必要はありません。',action:['ここから15秒',()=>$('#seg15Btn').click()]}; }
   const off=P().players.filter(p=>p.team===P().settings.offense); const todo=off.filter(p=>(coverage(p.kfs)||0)<0.9); const todoStr=todo.map(p=>'#'+p.num).join(' ');
   const canAI=S.source.kind==='video';
+  if(g.b-g.a>60 && !S.scan) return {n:3,text:`区間が ${fmt(g.a)}〜${fmt(g.b)}（約${Math.round((g.b-g.a)/60)}分）と長すぎます。手入力は1プレー（10〜20秒）単位が現実的です。「解除」してから、起こしたい場面で「ここから15秒」を押してください。`+(canAI?'長い範囲をまとめて処理したい場合だけ「区間を一括自動追跡（AI）」を使います。':''),action:['区間を解除',()=>$('#segClearBtn').click()]};
   if(!S.selected){ if(!todo.length) return {n:6,text:`${P().teams[P().settings.offense].name} の5人は区間 ${fmt(g.a)}〜${fmt(g.b)} の入力が完了です。再生して確認し、ずれはボードでコマをドラッグして直してください。相手チームやボールも必要なら同様に。STATS タブで得点やTOの記録もできます。`};
     return {n:4,text:`名簿で選手をクリックして選びます（未入力: ${todoStr}）。`+(canAI?'AIに任せるなら「区間を一括自動追跡」を押し、終わったら選手を選んで動画の枠をクリックするだけです。':'YouTube再生ではAI追跡が使えないため、手で入力します。')+'',action: canAI&&!S.scan?['区間を一括自動追跡（AI）',()=>$('#scanBtn').click()]:null}; }
   const e=entity(S.selected); const label=S.selected==='ball'?'ボール':'#'+byId(S.selected).num;
@@ -1178,7 +1193,7 @@ function guideWizard(n){
     if(S.lm) return {n:2,text:`${step} ${nm}（${n}点）: ボードで光っている「${LM[S.lm].name}」と同じ場所を、動画でクリックしてください。映っていなければ「スキップ」。4点以上で緑の線が合ったら「${nm}を確定」。`,action: ok?[nm+'を確定',wizConfirm]:['この点は映っていない（スキップ）',wizSkip]};
     return {n:2,text: ok?`${step} ${nm}の点を置き終えました。緑の線が映像のコートに合っていれば「${nm}を確定」を押してください。`:`${step} ${nm}: 点が足りません（${n}点）。ボードで別の点をクリックして追加するか、コートがよく映っている時刻に移動してやり直してください。`,action: ok?[nm+'を確定',wizConfirm]:null};
   }
-  if(w.phase==='Ldone') return {n:2,text:'① 左コートは確定しました。② 次は右コートです。下のタイムラインやスライダーで、右コートが映っている時刻まで動画を進めてから「右の位置合わせスタート」を押してください。同じ場面に右コートも映っていれば、左パネルの「続けて右を置く」でも構いません。',action:['右の位置合わせスタート',wizStartRightShift]};
+  if(w.phase==='Ldone') return {n:2,text:'① 左コートは確定しました。まず左コートの場面だけ起こすなら「右コートは後で → 追跡へ進む」で先に進めます。右コートも使うなら、右コートが映っている時刻まで動画を進めて「右の位置合わせスタート」。',action:['右コートは後で → 追跡へ進む',()=>{ S.wiz.phase='done'; S.lm=null; setVMode('track'); }]};
   return null;
 }
 function updateGuide(){

@@ -231,8 +231,8 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
       </div>
       <div id="tabTrack" style="display:contents">
       <section>
-        <h3>解析する区間 <span class="hint">1プレー 10〜20秒が目安</span></h3>
-        <div class="actions"><button class="btn sm" id="seg15Btn" title="現在時刻から15秒間を区間にする">ここから15秒</button><button class="btn sm" id="segStartBtn">ここから</button><button class="btn sm" id="segEndBtn">ここまで</button><span class="seglbl" id="segLabel">未設定</span><button class="btn sm" id="segClearBtn" hidden>解除</button></div>
+        <h3>ボードにする範囲 <span class="hint">1回の攻撃 10〜20秒が目安</span></h3>
+        <div class="actions"><button class="btn sm" id="seg15Btn" title="今の位置から15秒間を作業範囲にする">ここから15秒</button><button class="btn sm" id="segStartBtn">ここから</button><button class="btn sm" id="segEndBtn">ここまで</button><span class="seglbl" id="segLabel">未設定</span><button class="btn sm" id="segClearBtn" hidden>解除</button></div>
         <div class="actions" style="margin-top:6px"><button class="btn sm" id="scanBtn">区間を一括自動追跡（AI）</button></div>
         <p class="note" id="scanNote">スキャン後は、動画に出る枠を（選手を選んでから）クリックするだけで、その人が映っている間の動きがまとめて入ります。手元の動画ファイルのみ対応。</p>
       </section>
@@ -1174,10 +1174,10 @@ function guideState(){
   if(S.selected && !entity(S.selected)) S.selected=null;
   const g=seg(); const sg=P().settings.seg||{};
   if(!g){ if(sg.a!=null) return {n:3,text:`区間の開始は ${fmt(sg.a)}。プレーの終わりまで動画を進めて「ここまで」を押してください。長いほど入力が増えるので、まずは10〜20秒がおすすめです。`,action:['ここまで（現在時刻）',()=>$('#segEndBtn').click()]};
-    return {n:3,text:'先に「どのプレーを起こすか」を決めます。起こしたい場面の始まりまで動画を進めて「ここから15秒」を押すのが最短です（「ここから」「ここまで」で自由に指定もできます）。この区間の中だけ入力すれば完了で、動画全体を入力する必要はありません。',action:['ここから15秒',()=>$('#seg15Btn').click()]}; }
+    return {n:3,text:'動画全体ではなく、ボードで見たい場面（1回の攻撃など）だけを入力します。見たい場面の始まりまで動画を進めて止め、「ここから15秒」を押してください。今の位置から15秒間が作業範囲になります（「ここから」「ここまで」で長さを自由に決めることもできます）。',action:['ここから15秒',()=>$('#seg15Btn').click()]}; }
   const off=P().players.filter(p=>p.team===P().settings.offense); const todo=off.filter(p=>(coverage(p.kfs)||0)<0.9); const todoStr=todo.map(p=>'#'+p.num).join(' ');
   const canAI=S.source.kind==='video';
-  if(g.b-g.a>60 && !S.scan) return {n:3,text:`区間が ${fmt(g.a)}〜${fmt(g.b)}（約${Math.round((g.b-g.a)/60)}分）と長すぎます。手入力は1プレー（10〜20秒）単位が現実的です。「解除」してから、起こしたい場面で「ここから15秒」を押してください。`+(canAI?'長い範囲をまとめて処理したい場合だけ「区間を一括自動追跡（AI）」を使います。':''),action:['区間を解除',()=>$('#segClearBtn').click()]};
+  if(g.b-g.a>60 && !S.scan) return {n:3,text:`作業範囲が ${fmt(g.a)}〜${fmt(g.b)}（約${Math.round((g.b-g.a)/60)}分）と長すぎます。手入力は1回の攻撃（10〜20秒）単位が現実的です。「解除」してから、ボードで見たい場面の始まりで「ここから15秒」を押してください。`+(canAI?'長い範囲をまとめて処理したい場合だけ「区間を一括自動追跡（AI）」を使います。':''),action:['区間を解除',()=>$('#segClearBtn').click()]};
   if(!S.selected){ if(!todo.length) return {n:6,text:`${P().teams[P().settings.offense].name} の5人は区間 ${fmt(g.a)}〜${fmt(g.b)} の入力が完了です。再生して確認し、ずれはボードでコマをドラッグして直してください。相手チームやボールも必要なら同様に。STATS タブで得点やTOの記録もできます。`};
     return {n:4,text:`名簿で選手をクリックして選びます（未入力: ${todoStr}）。`+(canAI?'AIに任せるなら「区間を一括自動追跡」を押し、終わったら選手を選んで動画の枠をクリックするだけです。':'YouTube再生ではAI追跡が使えないため、手で入力します。')+'',action: canAI&&!S.scan?['区間を一括自動追跡（AI）',()=>$('#scanBtn').click()]:null}; }
   const e=entity(S.selected); const label=S.selected==='ball'?'ボール':'#'+byId(S.selected).num;

@@ -242,6 +242,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         <div id="clusterBox" hidden>
           <h3 style="margin-top:8px">チーム色の判定</h3>
           <div id="clusterList"></div>
+          <div class="actions" style="margin:4px 0 8px"><button class="btn sm" id="recalcScanBtn" title="位置合わせを直した後に、解析結果の位置だけを計算し直します（再解析は不要）">位置合わせの変更を解析結果に反映</button></div>
           <div class="field"><label>自動コマを表示</label><input type="checkbox" id="showAuto" checked></div>
           <div class="field"><label>自動コマに番号(T)を表示</label><input type="checkbox" id="showAutoId"></div>
           <p class="note">背番号を付けるには、名簿で選手を選んでからボードの自動コマ（または動画の枠）をクリックします。追跡が途切れた先は、その時刻でもう一度クリックすると続きが入ります。</p>
@@ -275,6 +276,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
           <button class="btn sm" id="newCalibBtn" title="カメラが動いた時刻で新しい位置合わせを追加">この時刻で新規</button>
           <button class="btn sm danger" id="delCalibBtn">削除</button>
         </div>
+        <button class="btn sm" id="mergeCalibBtn" hidden style="margin-top:6px;width:100%">左右の位置合わせを1つに統合（固定カメラ向け）</button>
         <button class="btn" id="goTrackBtn" hidden style="margin:6px 0;width:100%">✓ 位置合わせOK → 追跡に進む</button>
         <div class="wiz" id="wizBox" hidden>
           <div class="wiz-h"><b id="wizTitle"></b><span id="wizProg"></span></div>
@@ -882,6 +884,8 @@ function renderCalibList(){
   for(const l of placed){ const d=document.createElement('div'); if(l.id===S.lm) d.classList.add('cur'); const bad=c.bad&&c.bad[l.id]; d.innerHTML=`<b>${l.name}</b><span>${bad?'<span style="color:var(--bad)">ずれ大</span> ':''}<button class="x" style="border:0;background:none;color:var(--muted);cursor:pointer" title="この点を削除">×</button></span>`; d.addEventListener('click',e=>{ if(e.target.closest('button')) return; S.lm=l.id; renderCalibList(); }); d.querySelector('button').addEventListener('click',()=>{ delete c.pts[l.id]; S.ptOrder=S.ptOrder.filter(x=>x!==l.id); recomputeCalib(c); scheduleSave(); renderCalibList(); }); host.appendChild(d); }
   $('#goTrackBtn').hidden = !(c.H && S.vmode==='calib');
   const calibs=P().calibs.length; $('#delCalibBtn').textContent = calibs>1 ? `削除（${calibs}件中）` : '削除';
+  $('#mergeCalibBtn').hidden = calibs<2;
+  if(c.H){ const xs=Object.keys(c.pts).map(id=>LM[id]).filter(Boolean).map(l=>l.x); const oneSide = xs.length && (xs.every(x=>x<=C.L/2+0.1)||xs.every(x=>x>=C.L/2-0.1)); if(oneSide) $('#calibNote').textContent += ' 片側の点だけです。カメラが固定でコート全体が映るなら、反対側の点も同じ位置合わせに足すと全体の精度が上がります（「目印を置く」→ボードで反対側の点をクリック→動画でクリック）。'; }
   renderWizard();
 }
 // ---- calibration wizard: left court → confirm → (move time) → right court → confirm
@@ -921,6 +925,8 @@ $('#goTrackBtn').addEventListener('click',()=>{ setVMode('track'); toast('名簿
 $('#newCalibBtn').addEventListener('click',()=>{ const t=now(); if(P().calibs.some(c=>Math.abs(c.t-t)<0.05)) return toast('同じ時刻に既に位置合わせがあります'); const c={id:uid(),t,pts:{},H:null,Hi:null}; recomputeCalib(c); P().calibs.push(c); P().calibs.sort((a,b)=>a.t-b.t); S.lm=null; S.ptOrder=[]; scheduleSave(); setVMode('calib'); toast('この時刻からの位置合わせを新しく始めます。ボードで点を選び、動画の同じ場所をクリックしてください。',5000); renderCalibList(); });
 $('#undoPtBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c) return; const id=S.ptOrder.pop()||Object.keys(c.pts).pop(); if(!id) return; delete c.pts[id]; recomputeCalib(c); S.lm=id; scheduleSave(); renderCalibList(); toast('「'+LM[id].name+'」を取り消しました'); });
 $('#clearPtsBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c||!Object.keys(c.pts).length) return; if(!confirm('この位置合わせの点をすべて消しますか？')) return; c.pts={}; S.ptOrder=[]; S.lm=null; recomputeCalib(c); scheduleSave(); renderCalibList(); });
+function recomputeScan(){ const sc=S.scan; if(!sc) return 0; let n=0; for(const id in sc.tracks){ const tr=sc.tracks[id]; for(const pt of tr.pts){ if(pt.fu==null) continue; const q=imgToCourt(pt.fu,pt.fv,pt.t); if(q){ pt.x=clamp(q[0],-1,C.L+1); pt.y=clamp(q[1],-1,C.W+1); n++; } } } for(const fr of sc.frames) for(const d of fr.dets){ if(d.fu==null) continue; const q=imgToCourt(d.fu,d.fv,fr.t); if(q){ d.x=q[0]; d.y=q[1]; } } saveScan(); return n; }
+$('#mergeCalibBtn').addEventListener('click',()=>{ const cs=P().calibs; if(cs.length<2) return; if(!confirm(`${cs.length}件の位置合わせの点をすべて1つにまとめます（カメラが動いていない前提）。よろしいですか？`)) return; const pts={}; for(const c of cs) Object.assign(pts,c.pts); const m={id:uid(),t:0,pts,H:null,Hi:null}; recomputeCalib(m); if(!m.H) return toast('統合した点では計算できませんでした'); P().calibs=[m]; S.wiz=null; S.lm=null; scheduleSave(); renderCalibList(); const n=recomputeScan(); toast(`統合しました（${Object.keys(pts).length}点、誤差 ${(m.err*100).toFixed(2)}%）。`+(n?`解析結果 ${n} 点の位置も新しい位置合わせで計算し直しました。`:'')+'赤い点があれば置き直してください。',7000); });
 $('#delCalibBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c) return; P().calibs=P().calibs.filter(k=>k!==c); scheduleSave(); renderCalibList(); toast('位置合わせを削除しました'); });
 function setVMode(m){ S.vmode=m; $$('[data-vmode]').forEach(b=>b.classList.toggle('on',b.dataset.vmode===m)); $('#calibModeBtn').classList.toggle('on',m==='calib'); renderCalibList(); }
 $$('[data-vmode]').forEach(b=>b.addEventListener('click',()=>setVMode(b.dataset.vmode)));
@@ -1114,6 +1120,7 @@ async function runScan(a,b){
 $('#autoAllBtn').addEventListener('click',()=>{ if(!S.source) return toast('先に動画を開いてください'); const d=S.source.duration||0; if(!d) return toast('動画の長さが取れません'); if(S.scan&&!confirm('既存の解析結果を置き換えますか？')) return; runScan(0,d); });
 $('#scanBtn').addEventListener('click',()=>{ const g=seg(); if(!g) return toast('先に「ここから15秒」などで範囲を決めてください',4000); if(S.scan&&!confirm('既存の解析結果を置き換えますか？')) return; runScan(g.a,g.b); });
 $('#stopScanBtn').addEventListener('click',()=>{ trackAbort=true; });
+$('#recalcScanBtn').addEventListener('click',()=>{ const n=recomputeScan(); toast(n?`解析結果 ${n} 点の位置を今の位置合わせで計算し直しました`:'解析結果がありません',4000); });
 function applyClusterTeams(){ const sc=S.scan; if(!sc) return; for(const id in sc.tracks){ const tr=sc.tracks[id]; const cl=sc.clusters[tr.k]; tr.team=cl?cl.team:'X'; } }
 function renderClusters(){ const sc=S.scan; const box=$('#clusterBox'); if(!sc){ box.hidden=true; return; } box.hidden=false; const host=$('#clusterList'); host.innerHTML='';
   sc.clusters.forEach((cl,i)=>{ const row=document.createElement('div'); row.className='field'; const rgb=`rgb(${cl.rgb.map(Math.round).join(',')})`; row.innerHTML=`<span style="width:22px;height:22px;border-radius:50%;background:${rgb};border:2px solid var(--panel);box-shadow:0 0 0 1px var(--line);flex:none"></span><label>色${i+1}（${cl.n}回検出）</label><select data-cl="${i}"><option value="A">${P().teams.A.name}</option><option value="B">${P().teams.B.name}</option><option value="X">無視（審判・観客）</option></select>`; row.querySelector('select').value=cl.team; row.querySelector('select').addEventListener('change',e=>{ cl.team=e.target.value; applyClusterTeams(); saveScan(); }); host.appendChild(row); }); }

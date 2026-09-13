@@ -1200,7 +1200,7 @@ async function runScanInner(a,b){
   seek(startT>=a&&startT<=b?startT:a);
   const bad=[]; { let cur=null; for(const h of Hs){ const weak=h.inl!=null&&h.inl<20; if(weak){ if(cur&&h.t-cur.b<0.6) cur.b=h.t; else { cur={a:h.t,b:h.t}; bad.push(cur); } } } }
   const badTxt=bad.length?` 追跡が不安定だった時間帯: ${bad.slice(0,8).map(x=>fmt(x.a)+'〜'+fmt(x.b)).join(', ')}${bad.length>8?' ほか':''}（タイムライン上部の赤印。この付近に位置合わせを追加して再解析すると改善します）`:' カメラ追跡は全区間で安定していました。';
-  const errTxt=(segErr.length?' アンカー間のズレ補正量: '+segErr.map(e=>`${fmt(e.t0)}〜${fmt(e.t1)} ${e.err!=null?e.err.toFixed(1)+'m':'?'}`).join(' / ')+'（2mを超える区間は途中に位置合わせを足すと改善します）':' アンカーが1つだけなので、ズレは時間とともに積み重なります。カメラが動く映像では1分ごとに位置合わせを追加してください。';
+  const errTxt=(segErr.length?' アンカー間のズレ補正量: '+segErr.map(e=>`${fmt(e.t0)}〜${fmt(e.t1)} ${e.err!=null?e.err.toFixed(1)+'m':'?'}`).join(' / ')+'（2mを超える区間は途中に位置合わせを足すと改善します）':' アンカーが1つだけなので、ズレは時間とともに積み重なります。カメラが動く映像では1分ごとに位置合わせを追加してください。')+badTxt;
   if(!good.length){ $('#scanNote').textContent='解析は終わりましたが、コート上に人物を検出できませんでした。位置合わせが合っているか（緑の線がコートに重なるか）、映像に選手が十分な大きさで映っているかを確認してください。'; toast('人物を検出できませんでした',5000); renderRoster(); return; }
   $('#scanNote').textContent=`解析完了（${((performance.now()-t0)/1000/60).toFixed(1)}分、人の動き ${good.length} 本、カメラ追跡の失敗 ${lostFrames}/${frameCount} フレーム）。ボードに自動コマが出ています。チームの色分けが逆なら下で入れ替えてください。`+errTxt;
   toast('自動解析が完了しました。再生するとボードで全員が動きます。',5000); renderRoster();

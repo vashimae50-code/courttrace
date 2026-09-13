@@ -527,7 +527,7 @@ function thumbCorr(a,b){ let s=0; for(let i=0;i<576;i++) s+=a[i]*b[i]; return s/
 // Which calibration applies at time t?  After an AI scan, the camera-tracked homography for that frame;
 // otherwise (and always while editing anchors) the latest user anchor at or before t.
 function scanH(t){ const sc=S.scan; if(!sc||!sc.Hs||!sc.Hs.length||t<sc.a-0.5||t>sc.b+0.5) return null; const hs=sc.Hs; let lo=0,hi=hs.length-1; while(lo<hi){ const mid=(lo+hi)>>1; if(hs[mid].t<t) lo=mid+1; else hi=mid; } let e=hs[lo]; if(lo>0&&Math.abs(hs[lo-1].t-t)<Math.abs(e.t-t)) e=hs[lo-1]; if(Math.abs(e.t-t)>0.6) return null; if(!e.Hi) e.Hi=mat3inv(e.H); return e; }
-function calibAt(t){ const cs=P().calibs; if(!cs.length) return null; if(S.vmode!=='calib'){ const e=scanH(t); if(e&&e.Hi) return {id:'scan',t:e.t,pts:{},H:e.H,Hi:e.Hi,scan:true}; } return calibByTime(t); }
+function calibAt(t){ const cs=P().calibs; if(!cs.length) return null; if(S.liveH&&S.tracking&&S.liveH.Hi) return S.liveH; if(S.vmode!=='calib'){ const e=scanH(t); if(e&&e.Hi) return {id:'scan',t:e.t,pts:{},H:e.H,Hi:e.Hi,scan:true}; } return calibByTime(t); }
 function captureThumb(c){ const th=frameThumb(); if(th) c.thumb=th; S.viewCache=null; }
 function recomputeCalib(c){
   const ids=Object.keys(c.pts); const src=[],dst=[];
@@ -805,6 +805,7 @@ function drawOverlay(){
   const c=calibAt(t);
   if(c&&c.Hi&&P().settings.showProj){ g.strokeStyle= S.vmode==='calib' ? 'rgba(80,220,120,.9)' : 'rgba(255,255,255,.35)'; g.lineWidth=1.5; g.lineJoin='round';
     for(const path of COURT_PATHS){ g.beginPath(); let pen=false; for(const p of path){ const q=applyH(c.Hi,p[0],p[1]); if(!q||q[2]<=0||Math.abs(q[0])>3||Math.abs(q[1])>3){pen=false;continue;} const px=I(q[0],q[1]); pen?g.lineTo(...px):g.moveTo(...px); pen=true; } g.stroke(); } }
+  if(S.tracking&&S.liveH){ const inl=S.liveInl|0; const col=inl<0?'#e0463c':inl<25?'#e0a020':'#4fd07a'; g.fillStyle='rgba(0,0,0,.6)'; g.fillRect(r.x+8,r.y+8,190,26); g.fillStyle=col; g.beginPath(); g.arc(r.x+22,r.y+21,6,0,Math.PI*2); g.fill(); g.fillStyle='#fff'; g.font='12px "Noto Sans JP",sans-serif'; g.textAlign='left'; g.textBaseline='middle'; g.fillText(inl<0?'カメラ追跡: 失敗（前の推定を維持）':`カメラ追跡: 良好（${inl}点）`,r.x+34,r.y+21); }
   if(S.vmode==='calib'){
     if(c) for(const id in c.pts){ const [px,py]=I(...c.pts[id]); const cur=id===S.lm; const bad=c.bad&&c.bad[id]; g.beginPath(); g.arc(px,py,cur?8:6,0,Math.PI*2); g.fillStyle=cur?'#e8b04a':bad?'#e0463c':'#4fd07a'; g.fill(); g.strokeStyle='#000'; g.lineWidth=1.5; g.stroke(); g.fillStyle='#fff'; g.font='11px "Noto Sans JP",sans-serif'; g.textAlign='left'; g.shadowColor='#000'; g.shadowBlur=3; g.fillText(LM[id].name,px+9,py-8); g.shadowBlur=0; }
     return;
@@ -833,6 +834,7 @@ function drawTimeline(){
     // visible spans
     const kv=kfs; g.fillStyle=r.color+'33'; for(let j=0;j<kv.length-1;j++){ const a=kv[j],b=kv[j+1]; const gap=r.id==='ball'&&a.holder?1e9:P().settings.maxGap; if(a.v&&b.v&&b.t-a.t<=gap) g.fillRect(X(a.t),y+5,X(b.t)-X(a.t),rowH-10); }
   });
+  if(S.scan&&S.scan.Hs){ g.fillStyle='rgba(216,68,60,.55)'; for(const h of S.scan.Hs){ if(h.inl!=null&&h.inl<20){ const x=X(h.t); g.fillRect(x-1,head-4,2,4); } } }
   { const g2=seg(); if(g2){ g.fillStyle='rgba(196,138,59,.14)'; g.fillRect(X(g2.a),0,X(g2.b)-X(g2.a),H); g.fillStyle=cssVar('--accent'); g.fillRect(X(g2.a)-1,0,2,H); g.fillRect(X(g2.b)-1,0,2,H); } }
   for(const ev of P().events){ const ex=X(ev.t); g.fillStyle=P().teams[ev.team]?P().teams[ev.team].color:cssVar('--muted'); g.beginPath(); g.moveTo(ex,head-9); g.lineTo(ex+3.5,head-5); g.lineTo(ex,head-1); g.lineTo(ex-3.5,head-5); g.closePath(); g.fill(); }
   const x=X(t); g.fillStyle=cssVar('--accent'); g.fillRect(x-0.5,0,1.5,H); g.beginPath(); g.moveTo(x-5,0); g.lineTo(x+5,0); g.lineTo(x,7); g.closePath(); g.fill();
@@ -1172,12 +1174,12 @@ async function runScanInner(a,b){
   await new Promise(resolve=>{ const timer=setInterval(()=>{ try{
       const ct=el.currentTime; if(trackAbort||ct>=b||el.ended){ clearInterval(timer); resolve(); return; } if(el.paused){ el.play().catch(()=>{}); return; } if(ct===lastT) return; lastT=ct; frameCount++;
       while(ai+1<anchors.length && anchors[ai+1].t<=ct+1e-3){ const next=anchors[ai+1]; const Ht=tracker.H(); if(Ht){ const Hi=mat3inv(Ht); if(Hi) segs.push({t0:segStart,t1:next.t,D:mat3mul(next.H,Hi)}); } ai++; tracker.reset(next); segStart=next.t; }
-      const inl=tracker.step(); if(inl<0) lostFrames++; const Ht=tracker.H(); if(!Ht) return;
+      const inl=tracker.step(); if(inl<0) lostFrames++; const Ht=tracker.H(); if(!Ht) return; S.liveH={id:'live',t:ct,pts:{},H:Ht,Hi:mat3inv(Ht),scan:true,inl}; S.liveInl=inl;
       if(ct-lastRec>=0.2){ lastRec=ct; Hs.push({t:ct,H:Ht,inl}); }
       if(ct-lastDet>=dtDet && !detBusy){ lastDet=ct; detBusy=true; const tt=ct, Hc=Ht; detector.detect(el,20,0.35).then(res=>{ const dets=res.filter(r=>r.class==='person').map(r=>({u:r.bbox[0]/W,v:r.bbox[1]/H,w:r.bbox[2]/W,h:r.bbox[3]/H,score:r.score})); ingest(tt,dets,Hc); }).catch(()=>{}).finally(()=>{ detBusy=false; }); }
       if(frameCount%15===0){ const done=(ct-a)/(b-a); const el2=(performance.now()-t0)/1000; const eta=done>0.02?Math.round(el2/done-el2):null; $('#scanNote').innerHTML=`<span class="progress">解析中 ${fmt(ct)} / ${fmt(b)}（${Math.round(done*100)}%${eta!=null?'、残り約'+Math.max(1,Math.ceil(eta/60))+'分':''}） 追跡点 ${Math.max(0,inl)} ・ 検出 ${frames.length}回</span>`; }
     }catch(e){ console.error(e); clearInterval(timer); resolve(); } },20); });
-  el.pause(); el.playbackRate=prevRate; el.muted=wasMuted; stopTracking(); $('#autoAllBtn').disabled=false; $('#scanBtn').disabled=false;
+  el.pause(); el.playbackRate=prevRate; el.muted=wasMuted; stopTracking(); S.liveH=null; $('#autoAllBtn').disabled=false; $('#scanBtn').disabled=false;
   // loop-closure: distribute the mismatch found at each anchor back across its segment
   const segErr=[]; for(const sg of segs){ const span=sg.t1-sg.t0||1; const corr=(t)=>lerpMat(sg.D,clamp((t-sg.t0)/span,0,1)); for(const h of Hs){ if(h.t>=sg.t0&&h.t<=sg.t1){ h.H=mat3mul(corr(h.t),h.H); h.Hi=null; } } for(const fr of frames){ if(fr.t<sg.t0||fr.t>sg.t1) continue; const Dm=corr(fr.t); for(const d of fr.dets){ const q=applyH(Dm,d.x,d.y); if(q){ d.x=clamp(q[0],-1,C.L+1); d.y=clamp(q[1],-1,C.W+1); } } } const q=applyH(sg.D,C.L/2,C.W/2); segErr.push({t0:sg.t0,t1:sg.t1,err:q?Math.hypot(q[0]-C.L/2,q[1]-C.W/2):null}); }
   for(const tr of tracks) for(const pt of tr.pts){ /* pts share objects with frame dets? no: sync from frames */ }
@@ -1196,7 +1198,9 @@ async function runScanInner(a,b){
   applyClusterTeams(); renderClusters(); saveScan();
   if(!seg()||b-a>(seg().b-seg().a)) { P().settings.seg={a,b:S.scan.b}; renderSeg(); scheduleSave(); }
   seek(startT>=a&&startT<=b?startT:a);
-  const errTxt=segErr.length?' アンカー間のズレ補正量: '+segErr.map(e=>`${fmt(e.t0)}〜${fmt(e.t1)} ${e.err!=null?e.err.toFixed(1)+'m':'?'}`).join(' / ')+'（2mを超える区間は途中に位置合わせを足すと改善します）':' アンカーが1つだけなので、ズレは時間とともに積み重なります。カメラが動く映像では1分ごとに位置合わせを追加してください。';
+  const bad=[]; { let cur=null; for(const h of Hs){ const weak=h.inl!=null&&h.inl<20; if(weak){ if(cur&&h.t-cur.b<0.6) cur.b=h.t; else { cur={a:h.t,b:h.t}; bad.push(cur); } } } }
+  const badTxt=bad.length?` 追跡が不安定だった時間帯: ${bad.slice(0,8).map(x=>fmt(x.a)+'〜'+fmt(x.b)).join(', ')}${bad.length>8?' ほか':''}（タイムライン上部の赤印。この付近に位置合わせを追加して再解析すると改善します）`:' カメラ追跡は全区間で安定していました。';
+  const errTxt=(segErr.length?' アンカー間のズレ補正量: '+segErr.map(e=>`${fmt(e.t0)}〜${fmt(e.t1)} ${e.err!=null?e.err.toFixed(1)+'m':'?'}`).join(' / ')+'（2mを超える区間は途中に位置合わせを足すと改善します）':' アンカーが1つだけなので、ズレは時間とともに積み重なります。カメラが動く映像では1分ごとに位置合わせを追加してください。';
   if(!good.length){ $('#scanNote').textContent='解析は終わりましたが、コート上に人物を検出できませんでした。位置合わせが合っているか（緑の線がコートに重なるか）、映像に選手が十分な大きさで映っているかを確認してください。'; toast('人物を検出できませんでした',5000); renderRoster(); return; }
   $('#scanNote').textContent=`解析完了（${((performance.now()-t0)/1000/60).toFixed(1)}分、人の動き ${good.length} 本、カメラ追跡の失敗 ${lostFrames}/${frameCount} フレーム）。ボードに自動コマが出ています。チームの色分けが逆なら下で入れ替えてください。`+errTxt;
   toast('自動解析が完了しました。再生するとボードで全員が動きます。',5000); renderRoster();

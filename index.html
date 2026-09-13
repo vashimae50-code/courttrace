@@ -762,6 +762,8 @@ function drawBoard(){
   const b=ballPos(t); if(b){ const [px,py]=toPx(...b); const r=0.3*s; g.beginPath(); g.arc(px+r*0.15,py+r*0.2,r,0,Math.PI*2); g.fillStyle='rgba(0,0,0,.3)'; g.fill(); g.beginPath(); g.arc(px,py,r,0,Math.PI*2); g.fillStyle=cssVar('--ball'); g.fill(); g.strokeStyle='#5a2c0a'; g.lineWidth=Math.max(1,r*0.12); g.stroke(); g.beginPath(); g.moveTo(px-r,py); g.lineTo(px+r,py); g.moveTo(px,py-r); g.lineTo(px,py+r); g.stroke(); if(S.selected==='ball'){ g.beginPath(); g.arc(px,py,r+4,0,Math.PI*2); g.strokeStyle=cssVar('--sel'); g.lineWidth=2; g.stroke(); } }
   // shot chart
   if($('#shotChart').checked){ const lim=statLimit(); for(const ev of P().events){ if(ev.x==null||(ev.type!=='2P'&&ev.type!=='3P')||ev.t>lim) continue; const [px,py]=toPx(ev.x,ev.y); const col=P().teams[ev.team].color; const r=Math.max(4,0.28*s); g.lineWidth=Math.max(1.5,0.07*s); if(ev.made){ g.beginPath(); g.arc(px,py,r,0,Math.PI*2); g.fillStyle=col; g.fill(); g.strokeStyle='#fff'; g.stroke(); } else { g.strokeStyle=col; g.beginPath(); g.moveTo(px-r,py-r); g.lineTo(px+r,py+r); g.moveTo(px+r,py-r); g.lineTo(px-r,py+r); g.stroke(); } } }
+  // auto ball (from AI scan) when the roster ball has no position
+  if(!b && $('#showAuto').checked){ const ab=autoBallPos(t); if(ab){ const [px,py]=toPx(ab.x,ab.y); const r=0.3*s; g.beginPath(); g.arc(px,py,r,0,Math.PI*2); g.fillStyle=cssVar('--ball'); g.globalAlpha=.85; g.fill(); g.globalAlpha=1; g.setLineDash([2,2]); g.strokeStyle='#fff'; g.lineWidth=1.5; g.stroke(); g.setLineDash([]); } }
   // strokes
   for(const sk of P().strokes) drawStroke(g,sk);
   if(S.drawing) drawStroke(g,S.drawing);
@@ -813,6 +815,7 @@ function drawOverlay(){
   // detections
   for(const d of S.detections){ const [x,y]=I(d.u,d.v); const w=d.w*r.w, h=d.h*r.h; g.strokeStyle='rgba(255,215,80,.9)'; g.lineWidth=1.5; g.strokeRect(x,y,w,h); g.beginPath(); g.arc(x+w/2,y+h,4,0,Math.PI*2); g.fillStyle='rgba(255,215,80,.95)'; g.fill();
     if(d.track){ g.fillStyle='rgba(255,215,80,.9)'; g.fillRect(x,y-14,26,14); g.fillStyle='#1c1408'; g.font='700 11px "Barlow Condensed",sans-serif'; g.textAlign='left'; g.textBaseline='middle'; g.fillText('T'+d.track,x+3,y-7); } }
+  { const f=S.scan&&!S.tracking?scanFrameAt(t):null; const bl=f?f.balls:(S.tracking?S.lastBalls:null); if(bl) for(const bb of bl){ const [x,y]=I(bb.u+bb.w/2,bb.v+bb.h/2); g.beginPath(); g.arc(x,y,Math.max(5,bb.w*r.w/2),0,Math.PI*2); g.strokeStyle='#e8862e'; g.lineWidth=2; g.stroke(); } }
   // pieces reprojected into the video
   if(c&&c.Hi){ for(const p of P().players){ const q=playerPos(p,t); if(!q) continue; const im=applyH(c.Hi,q[0],q[1]); if(!im||im[2]<=0) continue; const [px,py]=I(im[0],im[1]); const col=P().teams[p.team].color; g.beginPath(); g.arc(px,py,S.selected===p.id?9:7,0,Math.PI*2); g.fillStyle=col; g.globalAlpha=.85; g.fill(); g.globalAlpha=1; g.strokeStyle='#fff'; g.lineWidth=S.selected===p.id?2.5:1.2; g.stroke(); g.fillStyle='#fff'; g.font='700 10px "Barlow Condensed",sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(p.num,px,py+0.5); }
     const b=ballPos(t); if(b){ const im=applyH(c.Hi,b[0],b[1]); if(im&&im[2]>0){ const [px,py]=I(im[0],im[1]); g.beginPath(); g.arc(px,py-8,4.5,0,Math.PI*2); g.fillStyle='#e8862e'; g.fill(); g.strokeStyle='#fff'; g.lineWidth=1; g.stroke(); } } }
@@ -1082,6 +1085,43 @@ $('#projIn').addEventListener('change',e=>{ const f=e.target.files[0]; if(!f) re
 $('#pngBtn').addEventListener('click',()=>{ board.toBlob(b=>download('board_'+fmt(now()).replace(/[:.]/g,'-')+'.png',b)); });
 
 // ───────────────────────── AI detection (optional; loads TF.js lazily)
+// ---------- YOLOv10n (onnxruntime-web): persons + ball, tiled at native scale on WebGPU, 2 tiles on CPU
+let yolo=null, yoloLoading=null; const YOLO_IN=640;
+async function ensureYolo(){
+  if(yolo) return yolo;
+  if(!yoloLoading) yoloLoading=(async()=>{
+    $('#detNote').textContent='検出モデル（YOLOv10n）を読み込み中…（初回のみ）';
+    await loadFirst(['vendor/ort/ort.webgpu.min.js','https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.webgpu.min.js']);
+    const localWasm=await urlExists('vendor/ort/ort-wasm-simd-threaded.jsep.wasm');
+    ort.env.wasm.wasmPaths= localWasm ? new URL('vendor/ort/',location.href).href : 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
+    ort.env.wasm.numThreads=Math.min(4,navigator.hardwareConcurrency||2);
+    if(!(await urlExists('model/yolov10n.onnx'))) throw new Error('YOLO model missing');
+    let sess=null, ep='wasm';
+    if(navigator.gpu){ try{ sess=await ort.InferenceSession.create('model/yolov10n.onnx',{executionProviders:['webgpu']}); await sess.run({images:new ort.Tensor('float32',new Float32Array(3*YOLO_IN*YOLO_IN),[1,3,YOLO_IN,YOLO_IN])}); ep='webgpu'; }catch(e){ console.warn('WebGPU unavailable, using CPU',e); sess=null; } }
+    if(!sess) sess=await ort.InferenceSession.create('model/yolov10n.onnx',{executionProviders:['wasm']});
+    const cv=document.createElement('canvas'); cv.width=YOLO_IN; cv.height=YOLO_IN; const g=cv.getContext('2d',{willReadFrequently:true});
+    yolo={sess,ep,cv,g,buf:new Float32Array(3*YOLO_IN*YOLO_IN)};
+    $('#detNote').textContent=`検出モデル読み込み済み（YOLOv10n・${ep==='webgpu'?'GPU':'CPU'}実行）`; return yolo;
+  })().catch(e=>{ yoloLoading=null; throw e; });
+  return yoloLoading;
+}
+async function yoloInfer(el,sx,sy,sw,sh){
+  const y=yolo, N=YOLO_IN*YOLO_IN; const sc=Math.min(YOLO_IN/sw,YOLO_IN/sh); const w=Math.round(sw*sc),h=Math.round(sh*sc);
+  y.g.fillStyle='#727272'; y.g.fillRect(0,0,YOLO_IN,YOLO_IN); y.g.drawImage(el,sx,sy,sw,sh,0,0,w,h);
+  const d=y.g.getImageData(0,0,YOLO_IN,YOLO_IN).data, f=y.buf; for(let i=0;i<N;i++){ f[i]=d[i*4]/255; f[N+i]=d[i*4+1]/255; f[2*N+i]=d[i*4+2]/255; }
+  const out=await y.sess.run({images:new ort.Tensor('float32',f,[1,3,YOLO_IN,YOLO_IN])}); const data=out.output0.data; const res=[];
+  for(let i=0;i<300;i++){ const score=data[i*6+4]; if(score<0.2) continue; const cls=data[i*6+5]; if(cls!==0&&cls!==32) continue; res.push({cls,score,x:sx+data[i*6]/sc,y:sy+data[i*6+1]/sc,w:(data[i*6+2]-data[i*6])/sc,h:(data[i*6+3]-data[i*6+1])/sc}); }
+  return res;
+}
+function nmsMerge(dets,iou=0.5){ dets.sort((a,b)=>b.score-a.score); const out=[]; for(const d of dets){ let dup=false; for(const o of out){ if(o.cls!==d.cls) continue; const ix=Math.max(0,Math.min(o.x+o.w,d.x+d.w)-Math.max(o.x,d.x)), iy=Math.max(0,Math.min(o.y+o.h,d.y+d.h)-Math.max(o.y,d.y)); const inter=ix*iy, u=o.w*o.h+d.w*d.h-inter; if(u>0&&inter/u>iou){ dup=true; break; } } if(!dup) out.push(d); } return out; }
+async function detectFrame(el,W,H){
+  const y=await ensureYolo(); const tiles=[]; const OV=48;
+  if(y.ep==='webgpu'){ const tw=Math.ceil((W+2*OV)/3), th=Math.ceil((H+OV)/2); for(let j=0;j<2;j++) for(let i=0;i<3;i++){ const x=Math.min(i*(tw-OV),W-tw), yy=Math.min(j*(th-OV),H-th); tiles.push([Math.max(0,x),Math.max(0,yy),Math.min(tw,W),Math.min(th,H)]); } }
+  else { const tw=Math.ceil((W+OV)/2); tiles.push([0,0,tw,H],[W-tw,0,tw,H]); }
+  let all=[]; for(const t of tiles) all=all.concat(await yoloInfer(el,...t)); all=nmsMerge(all,0.5);
+  const norm=d=>({u:d.x/W,v:d.y/H,w:d.w/W,h:d.h/H,score:d.score});
+  return {persons:all.filter(d=>d.cls===0&&d.score>=0.3).map(norm), balls:all.filter(d=>d.cls===32&&d.score>=0.3).map(norm)};
+}
 let detector=null, detLoading=null;
 function loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>{ s.remove(); rej(new Error('読み込み失敗: '+src)); }; document.head.appendChild(s); }); }
 async function loadFirst(urls){ let err; for(const u of urls){ try{ await loadScript(u); return u; }catch(e){ err=e; } } throw err; }
@@ -1095,9 +1135,10 @@ async function ensureDetector(){
     detector=await window.cocoSsd.load(local?{base:'lite_mobilenet_v2',modelUrl:'model/model.json'}:{base:'lite_mobilenet_v2'}); $('#detNote').textContent='モデル読み込み済み。枠をクリックすると足元がKFになります。'; return detector; })().catch(e=>{ detLoading=null; $('#detNote').textContent='AI検出を読み込めませんでした。ネットワーク制限のある環境（埋め込み表示など）では使えません。HTMLファイルをローカルで開くと動作します。'; throw e; });
   return detLoading;
 }
-async function detectNow(){ const d=await ensureDetector(); const res=await d.detect(S.source.el, 20, 0.35); const W=S.source.width,H=S.source.height; S.detections=res.filter(r=>r.class==='person').map(r=>({u:r.bbox[0]/W,v:r.bbox[1]/H,w:r.bbox[2]/W,h:r.bbox[3]/H,score:r.score})); return S.detections; }
+async function detectNow(){ const W=S.source.width,H=S.source.height; try{ const r=await detectFrame(S.source.el,W,H); S.detections=r.persons; S.lastBalls=r.balls; return S.detections; }catch(e){ console.warn('YOLO failed, falling back to COCO-SSD',e); const d=await ensureDetector(); const res=await d.detect(S.source.el, 80, 0.3); S.detections=res.filter(r=>r.class==='person').map(r=>({u:r.bbox[0]/W,v:r.bbox[1]/H,w:r.bbox[2]/W,h:r.bbox[3]/H,score:r.score})); S.lastBalls=[]; return S.detections; } }
+async function ensureAnyDetector(){ try{ await ensureYolo(); return 'yolo'; }catch(e){ console.warn(e); await ensureDetector(); return 'coco'; } }
 const YT_NO_AI='YouTube動画は映像を読み取れないため、AI検出は使えません。動画をダウンロードして「動画を開く」で読み込むと使えます。';
-$('#detectBtn').addEventListener('click',async()=>{ if(!S.source) return toast('先に動画を開いてください'); if(S.source.kind==='youtube') return toast(YT_NO_AI,6000); try{ const r=await detectNow(); toast(r.length?`${r.length}人検出。枠をクリックすると選択中の選手のKFになります`:'人物を検出できませんでした'); }catch(e){ toast(e.message,5000); } });
+$('#detectBtn').addEventListener('click',async()=>{ if(!S.source) return toast('先に動画を開いてください'); if(S.source.kind==='youtube') return toast(YT_NO_AI,6000); try{ const r=await detectNow(); toast((r.length?`${r.length}人検出`:'人物を検出できませんでした')+(S.lastBalls&&S.lastBalls.length?`、ボール ${S.lastBalls.length}個`:'')+'。枠をクリックすると選択中の選手のKFになります',4000); }catch(e){ toast(e.message,5000); } });
 let trackAbort=false;
 function stopTracking(){ trackAbort=true; S.tracking=false; $('#stopTrackBtn').hidden=true; $('#autoTrackBtn').disabled=false; const sb=$('#stopScanBtn'); if(sb) sb.hidden=true; }
 $('#stopTrackBtn').addEventListener('click',stopTracking);
@@ -1151,24 +1192,27 @@ async function runScanInner(a,b){
   if(!S.source) return toast('先に動画を開いてください'); if(S.source.kind!=='video') return toast(S.source.kind==='youtube'?YT_NO_AI:'自動解析は動画ファイルで使えます',6000);
   const anchors=P().calibs.filter(c=>c.H).slice().sort((p,q)=>p.t-q.t);
   if(!anchors.length) return toast('先に位置合わせをしてください（コート外の人を除外し、位置をボードに変換するために必要です）',5000);
-  await ensureDetector(); await loadJsfeat();
+  const which=await ensureAnyDetector(); await loadJsfeat();
   if(anchors[0].t>a+0.5){ a=anchors[0].t; toast(`最初の位置合わせがある ${fmt(a)} から解析を始めます`,4000); }
   if(b-a<1) return toast('解析範囲が短すぎます');
-  const dtDet=parseFloat($('#scanDt').value)||0.5, rate=parseFloat($('#scanRate').value)||1; const el=S.source.el; const W=S.source.width,H=S.source.height;
+  let dtDet=parseFloat($('#scanDt').value)||0.5; const rate=parseFloat($('#scanRate').value)||1; const el=S.source.el; const W=S.source.width,H=S.source.height;
+  if(which==='yolo'&&yolo&&yolo.ep!=='webgpu') dtDet=Math.max(dtDet,1.0);
+  const ballObs=[];
   S.source.pause(); updatePlayBtn(); trackAbort=false; S.tracking=true; $('#stopScanBtn').hidden=false; $('#autoAllBtn').disabled=true; $('#scanBtn').disabled=true;
   const wasMuted=el.muted; el.muted=true; const prevRate=el.playbackRate;
   const frames=[], tracks=[], Hs=[], segs=[]; let active=[], nextId=1; const t0=performance.now(); const startT=now();
   await S.source.seekAsync(a);
   const tracker=new CamTracker(el); let ai=0; for(let i=0;i<anchors.length;i++) if(anchors[i].t<=a+1e-3) ai=i; tracker.reset(anchors[ai]); let segStart=a;
   let lastT=-1, lastDet=-1e9, lastRec=-1e9, detBusy=false, lostFrames=0, frameCount=0;
-  const ingest=(t,dets,Hc)=>{
-    const kept=[]; for(const d of dets){ const fu=d.u+d.w/2, fv=d.v+d.h; const q=applyH(Hc,fu,fv); if(!q||q[2]<=0) continue; if(q[0]<-1.5||q[0]>C.L+1.5||q[1]<-1.5||q[1]>C.W+1.5) continue; d.fu=fu; d.fv=fv; d.x=clamp(q[0],-1,C.L+1); d.y=clamp(q[1],-1,C.W+1); d.col=sampleColor(el,d,W,H); kept.push(d); }
+  const ingest=(t,dets,Hc,balls)=>{
+    const kept=[]; for(const d of dets){ const fu=d.u+d.w/2, fv=d.v+d.h; const q=applyH(Hc,fu,fv); if(!q||q[2]<=0) continue; if(q[0]<-3||q[0]>C.L+3||q[1]<-3||q[1]>C.W+3) continue; d.fu=fu; d.fv=fv; d.x=clamp(q[0],-1,C.L+1); d.y=clamp(q[1],-1,C.W+1); d.col=sampleColor(el,d,W,H); kept.push(d); }
     const cand=[]; kept.forEach((d,di)=>{ active.forEach((tr,ti)=>{ const dist=Math.hypot(d.x-tr.x,d.y-tr.y); if(dist<2.2*Math.max(1,dtDet/0.5)) cand.push([dist,di,ti]); }); });
     cand.sort((p,q)=>p[0]-q[0]); const usedD=new Set(), usedT=new Set();
     for(const [dist,di,ti] of cand){ if(usedD.has(di)||usedT.has(ti)) continue; usedD.add(di); usedT.add(ti); const d=kept[di], tr=active[ti]; tr.x=d.x; tr.y=d.y; tr.miss=0; tr.pts.push({t,x:d.x,y:d.y,fu:d.fu,fv:d.fv,col:d.col}); d.track=tr.id; }
     kept.forEach((d,di)=>{ if(usedD.has(di)) return; const tr={id:nextId++,x:d.x,y:d.y,miss:0,pts:[{t,x:d.x,y:d.y,fu:d.fu,fv:d.fv,col:d.col}],team:null,player:null}; active.push(tr); tracks.push(tr); d.track=tr.id; });
     active.forEach((tr,ti)=>{ if(!usedT.has(ti)) tr.miss++; }); active=active.filter(tr=>tr.miss*dtDet<=1.0);
-    frames.push({t,dets:kept}); S.detections=kept;
+    const fb=[]; for(const b of (balls||[])){ const bu=b.u+b.w/2, bv=b.v+b.h; const q=applyH(Hc,bu,bv); if(!q||q[2]<=0) continue; if(q[0]<-2||q[0]>C.L+2||q[1]<-2||q[1]>C.W+2) continue; let best=null,bd=2.0; for(const d of kept){ const dist=Math.hypot(d.x-q[0],d.y-q[1]); if(dist<bd){bd=dist;best=d;} } const o={t,x:clamp(q[0],-1,C.L+1),y:clamp(q[1],-1,C.W+1),u:bu,v:bv,score:b.score,track:best?best.track:null,near:bd}; ballObs.push(o); fb.push({u:b.u,v:b.v,w:b.w,h:b.h,score:b.score}); }
+    frames.push({t,dets:kept,balls:fb}); S.detections=kept; S.lastBalls=fb;
   };
   el.playbackRate=rate; try{ await el.play(); }catch(e){}
   await new Promise(resolve=>{ const timer=setInterval(()=>{ try{
@@ -1176,7 +1220,7 @@ async function runScanInner(a,b){
       while(ai+1<anchors.length && anchors[ai+1].t<=ct+1e-3){ const next=anchors[ai+1]; const Ht=tracker.H(); if(Ht){ const Hi=mat3inv(Ht); if(Hi) segs.push({t0:segStart,t1:next.t,D:mat3mul(next.H,Hi)}); } ai++; tracker.reset(next); segStart=next.t; }
       const inl=tracker.step(); if(inl<0) lostFrames++; const Ht=tracker.H(); if(!Ht) return; S.liveH={id:'live',t:ct,pts:{},H:Ht,Hi:mat3inv(Ht),scan:true,inl}; S.liveInl=inl;
       if(ct-lastRec>=0.2){ lastRec=ct; Hs.push({t:ct,H:Ht,inl}); }
-      if(ct-lastDet>=dtDet && !detBusy){ lastDet=ct; detBusy=true; const tt=ct, Hc=Ht; detector.detect(el,20,0.35).then(res=>{ const dets=res.filter(r=>r.class==='person').map(r=>({u:r.bbox[0]/W,v:r.bbox[1]/H,w:r.bbox[2]/W,h:r.bbox[3]/H,score:r.score})); ingest(tt,dets,Hc); }).catch(()=>{}).finally(()=>{ detBusy=false; }); }
+      if(ct-lastDet>=dtDet && !detBusy){ lastDet=ct; detBusy=true; const tt=ct, Hc=Ht; const pr = which==='yolo' ? detectFrame(el,W,H) : detector.detect(el,80,0.3).then(res=>({persons:res.filter(r=>r.class==='person').map(r=>({u:r.bbox[0]/W,v:r.bbox[1]/H,w:r.bbox[2]/W,h:r.bbox[3]/H,score:r.score})),balls:[]})); pr.then(r=>{ ingest(tt,r.persons,Hc,r.balls); }).catch(e=>console.warn(e)).finally(()=>{ detBusy=false; }); }
       if(frameCount%15===0){ const done=(ct-a)/(b-a); const el2=(performance.now()-t0)/1000; const eta=done>0.02?Math.round(el2/done-el2):null; $('#scanNote').innerHTML=`<span class="progress">解析中 ${fmt(ct)} / ${fmt(b)}（${Math.round(done*100)}%${eta!=null?'、残り約'+Math.max(1,Math.ceil(eta/60))+'分':''}） 追跡点 ${Math.max(0,inl)} ・ 検出 ${frames.length}回</span>`; }
     }catch(e){ console.error(e); clearInterval(timer); resolve(); } },20); });
   el.pause(); el.playbackRate=prevRate; el.muted=wasMuted; stopTracking(); S.liveH=null; $('#autoAllBtn').disabled=false; $('#scanBtn').disabled=false;
@@ -1194,7 +1238,11 @@ async function runScanInner(a,b){
   clusters.forEach((cl,i)=>{ const r=rgbSum[i]; cl.rgb=r[3]?[r[0]/r[3],r[1]/r[3],r[2]/r[3]]:[128,128,128]; cl.n=r[3]; });
   const order=clusters.slice().sort((p,q)=>q.n-p.n); if(order[0]) order[0].team='A'; if(order[1]) order[1].team='B';
   fi=0; for(const tr of good){ const votes=[0,0,0]; for(const pt of tr.pts) if(pt.col){ votes[km.labels[fi++]]++; } tr.k=votes.indexOf(Math.max(...votes)); }
-  S.scan={a,b:Math.min(b,lastT>0?lastT:b),dt:dtDet,frames,tracks:Object.fromEntries(good.map(tr=>[tr.id,tr])),clusters,Hs,segErr,lost:lostFrames,frameCount};
+  // ball: drop stationary false positives (floor marks, spare balls), keep the rest sorted by time
+  ballObs.sort((p,q)=>p.t-q.t);
+  const ballKeep=ballObs.filter(o=>{ let n=0,tmin=o.t,tmax=o.t; for(const p of ballObs){ if(Math.hypot(p.x-o.x,p.y-o.y)<0.6){ n++; tmin=Math.min(tmin,p.t); tmax=Math.max(tmax,p.t); } } return !(n>=6 && tmax-tmin>=8); });
+  for(const o of ballKeep){ if(o.track&&!good.find(tr=>tr.id===o.track)){ const owner=tracks.find(tr=>tr.pts.some(pt=>pt.t===o.t)&&!tr.merged&&tr.id===o.track); if(!owner) o.track=null; } }
+  S.scan={a,b:Math.min(b,lastT>0?lastT:b),dt:dtDet,frames,tracks:Object.fromEntries(good.map(tr=>[tr.id,tr])),clusters,Hs,segErr,lost:lostFrames,frameCount,ball:ballKeep.map(o=>({t:o.t,x:o.x,y:o.y,track:o.track,score:o.score})),ballRaw:ballObs.length,detector:which};
   applyClusterTeams(); renderClusters(); saveScan();
   if(!seg()||b-a>(seg().b-seg().a)) { P().settings.seg={a,b:S.scan.b}; renderSeg(); scheduleSave(); }
   seek(startT>=a&&startT<=b?startT:a);
@@ -1202,7 +1250,7 @@ async function runScanInner(a,b){
   const badTxt=bad.length?` 追跡が不安定だった時間帯: ${bad.slice(0,8).map(x=>fmt(x.a)+'〜'+fmt(x.b)).join(', ')}${bad.length>8?' ほか':''}（タイムライン上部の赤印。この付近に位置合わせを追加して再解析すると改善します）`:' カメラ追跡は全区間で安定していました。';
   const errTxt=(segErr.length?' アンカー間のズレ補正量: '+segErr.map(e=>`${fmt(e.t0)}〜${fmt(e.t1)} ${e.err!=null?e.err.toFixed(1)+'m':'?'}`).join(' / ')+'（2mを超える区間は途中に位置合わせを足すと改善します）':' アンカーが1つだけなので、ズレは時間とともに積み重なります。カメラが動く映像では1分ごとに位置合わせを追加してください。')+badTxt;
   if(!good.length){ $('#scanNote').textContent='解析は終わりましたが、コート上に人物を検出できませんでした。位置合わせが合っているか（緑の線がコートに重なるか）、映像に選手が十分な大きさで映っているかを確認してください。'; toast('人物を検出できませんでした',5000); renderRoster(); return; }
-  $('#scanNote').textContent=`解析完了（${((performance.now()-t0)/1000/60).toFixed(1)}分、人の動き ${good.length} 本、カメラ追跡の失敗 ${lostFrames}/${frameCount} フレーム）。ボードに自動コマが出ています。チームの色分けが逆なら下で入れ替えてください。`+errTxt;
+  $('#scanNote').textContent=`解析完了（${((performance.now()-t0)/1000/60).toFixed(1)}分、検出 ${which==='yolo'?'YOLOv10n':'COCO-SSD'}、人の動き ${good.length} 本、ボール検出 ${ballKeep.length} 回、カメラ追跡の失敗 ${lostFrames}/${frameCount} フレーム）。ボードに自動コマが出ています。チームの色分けが逆なら下で入れ替えてください。`+errTxt;
   toast('自動解析が完了しました。再生するとボードで全員が動きます。',5000); renderRoster();
 }
 $('#autoAllBtn').addEventListener('click',async()=>{ if(!S.source) return toast('先に動画を開いてください'); const d=S.source.duration||0; if(!d) return toast('動画の長さが取れません'); if(S.scan&&!(await confirmAsk('既存の解析結果を置き換えますか？'))) return; runScan(0,d); });
@@ -1212,10 +1260,13 @@ $('#recalcScanBtn').addEventListener('click',()=>{ const n=recomputeScan(); toas
 function applyClusterTeams(){ const sc=S.scan; if(!sc) return; for(const id in sc.tracks){ const tr=sc.tracks[id]; const cl=sc.clusters[tr.k]; tr.team=cl?cl.team:'X'; } }
 function renderClusters(){ const sc=S.scan; const box=$('#clusterBox'); if(!sc){ box.hidden=true; return; } box.hidden=false; const host=$('#clusterList'); host.innerHTML='';
   sc.clusters.forEach((cl,i)=>{ const row=document.createElement('div'); row.className='field'; const rgb=`rgb(${cl.rgb.map(Math.round).join(',')})`; row.innerHTML=`<span style="width:22px;height:22px;border-radius:50%;background:${rgb};border:2px solid var(--panel);box-shadow:0 0 0 1px var(--line);flex:none"></span><label>色${i+1}（${cl.n}回検出）</label><select data-cl="${i}"><option value="A">${P().teams.A.name}</option><option value="B">${P().teams.B.name}</option><option value="X">無視（審判・観客）</option></select>`; row.querySelector('select').value=cl.team; row.querySelector('select').addEventListener('change',e=>{ cl.team=e.target.value; applyClusterTeams(); saveScan(); }); host.appendChild(row); }); }
-function saveScan(){ try{ if(!S.source||!S.scan) return; const sc=S.scan; const slim={a:sc.a,b:sc.b,dt:sc.dt,clusters:sc.clusters,segErr:sc.segErr||[],Hs:(sc.Hs||[]).map(h=>[+h.t.toFixed(2),...h.H.flat().map(v=>+v.toPrecision(7))]),tracks:Object.values(sc.tracks).map(tr=>({id:tr.id,k:tr.k,player:tr.player,pts:tr.pts.map(pt=>[+pt.t.toFixed(2),+pt.x.toFixed(2),+pt.y.toFixed(2),+pt.fu.toFixed(4),+pt.fv.toFixed(4),pt.cid||null])}))}; localStorage.setItem('courttrace:scan:'+S.source.key, JSON.stringify(slim)); }catch(e){ console.warn('scan save failed',e); } }
-function loadScan(key){ try{ const raw=localStorage.getItem('courttrace:scan:'+key); if(!raw) return; const slim=JSON.parse(raw); const tracks={}; const frames=[]; const byT=new Map(); for(const tr of slim.tracks){ const t2={id:tr.id,k:tr.k,player:tr.player||null,team:null,pts:tr.pts.map(a=>({t:a[0],x:a[1],y:a[2],fu:a[3],fv:a[4],cid:a[5]||null}))}; tracks[tr.id]=t2; for(const pt of t2.pts){ const key2=pt.t.toFixed(2); if(!byT.has(key2)) byT.set(key2,{t:pt.t,dets:[]}); byT.get(key2).dets.push({u:pt.fu-0.02,v:pt.fv-0.12,w:0.04,h:0.12,fu:pt.fu,fv:pt.fv,x:pt.x,y:pt.y,track:tr.id}); } } frames.push(...[...byT.values()].sort((p,q)=>p.t-q.t)); S.scan={a:slim.a,b:slim.b,dt:slim.dt,frames,tracks,clusters:slim.clusters,segErr:slim.segErr||[],Hs:(slim.Hs||[]).map(a=>({t:a[0],H:[[a[1],a[2],a[3]],[a[4],a[5],a[6]],[a[7],a[8],a[9]]]}))}; applyClusterTeams(); renderClusters(); $('#scanNote').textContent=`前回の解析結果（${Object.keys(tracks).length}本）を復元しました。`; }catch(e){} }
+function saveScan(){ try{ if(!S.source||!S.scan) return; const sc=S.scan; const slim={a:sc.a,b:sc.b,dt:sc.dt,clusters:sc.clusters,segErr:sc.segErr||[],ball:(sc.ball||[]).map(o=>[+o.t.toFixed(2),+o.x.toFixed(2),+o.y.toFixed(2),o.track||0]),Hs:(sc.Hs||[]).map(h=>[+h.t.toFixed(2),...h.H.flat().map(v=>+v.toPrecision(7))]),tracks:Object.values(sc.tracks).map(tr=>({id:tr.id,k:tr.k,player:tr.player,pts:tr.pts.map(pt=>[+pt.t.toFixed(2),+pt.x.toFixed(2),+pt.y.toFixed(2),+pt.fu.toFixed(4),+pt.fv.toFixed(4),pt.cid||null])}))}; localStorage.setItem('courttrace:scan:'+S.source.key, JSON.stringify(slim)); }catch(e){ console.warn('scan save failed',e); } }
+function loadScan(key){ try{ const raw=localStorage.getItem('courttrace:scan:'+key); if(!raw) return; const slim=JSON.parse(raw); const tracks={}; const frames=[]; const byT=new Map(); for(const tr of slim.tracks){ const t2={id:tr.id,k:tr.k,player:tr.player||null,team:null,pts:tr.pts.map(a=>({t:a[0],x:a[1],y:a[2],fu:a[3],fv:a[4],cid:a[5]||null}))}; tracks[tr.id]=t2; for(const pt of t2.pts){ const key2=pt.t.toFixed(2); if(!byT.has(key2)) byT.set(key2,{t:pt.t,dets:[]}); byT.get(key2).dets.push({u:pt.fu-0.02,v:pt.fv-0.12,w:0.04,h:0.12,fu:pt.fu,fv:pt.fv,x:pt.x,y:pt.y,track:tr.id}); } } frames.push(...[...byT.values()].sort((p,q)=>p.t-q.t)); S.scan={a:slim.a,b:slim.b,dt:slim.dt,frames,tracks,clusters:slim.clusters,segErr:slim.segErr||[],ball:(slim.ball||[]).map(a=>({t:a[0],x:a[1],y:a[2],track:a[3]||null})),Hs:(slim.Hs||[]).map(a=>({t:a[0],H:[[a[1],a[2],a[3]],[a[4],a[5],a[6]],[a[7],a[8],a[9]]]}))}; applyClusterTeams(); renderClusters(); $('#scanNote').textContent=`前回の解析結果（${Object.keys(tracks).length}本）を復元しました。`; }catch(e){} }
 function scanFrameAt(t){ const sc=S.scan; if(!sc||t<sc.a-sc.dt||t>sc.b+sc.dt) return null; const fr=sc.frames; let lo=0,hi=fr.length-1; while(lo<hi){ const mid=(lo+hi)>>1; if(fr[mid].t<t) lo=mid+1; else hi=mid; } const cands=[fr[lo],fr[lo-1]].filter(Boolean); let best=null,bd=sc.dt*0.51; for(const f of cands){ const d=Math.abs(f.t-t); if(d<bd){bd=d;best=f;} } return best; }
 function trackPosAt(tr,t){ const pts=tr.pts; if(!pts.length) return null; if(t<pts[0].t-0.3||t>pts[pts.length-1].t+0.3) return null; if(t<=pts[0].t) return [pts[0].x,pts[0].y]; let lo=0,hi=pts.length-1; while(lo<hi){ const mid=(lo+hi)>>1; if(pts[mid].t<t) lo=mid+1; else hi=mid; } const b=pts[lo], a=pts[lo-1]||b; if(a===b||b.t===a.t) return [b.x,b.y]; const u=clamp((t-a.t)/(b.t-a.t),0,1); if(b.t-a.t>1.5) return u<0.5?[a.x,a.y]:[b.x,b.y]; return [lerp(a.x,b.x,u),lerp(a.y,b.y,u)]; }
+function autoBallPos(t){ const sc=S.scan; const obs=sc&&sc.ball; if(!obs||!obs.length) return null; let lo=0,hi=obs.length-1; while(lo<hi){ const mid=(lo+hi+1)>>1; if(obs[mid].t<=t) lo=mid; else hi=mid-1; } const last=obs[lo].t<=t?obs[lo]:null; const next=obs[lo].t<=t?obs[lo+1]:obs[lo];
+  if(last && t-last.t<=4){ if(last.track&&sc.tracks[last.track]){ const p=trackPosAt(sc.tracks[last.track],t); if(p) return {x:p[0],y:p[1],src:'holder'}; } if(next&&next.t-t<=1.5&&next.t>last.t){ const u=(t-last.t)/(next.t-last.t); return {x:lerp(last.x,next.x,u),y:lerp(last.y,next.y,u),src:'flight'}; } return {x:last.x,y:last.y,src:'last'}; }
+  if(next && next.t-t<=1.5) return {x:next.x,y:next.y,src:'next'}; return null; }
 function autoPiecesAt(t){ const sc=S.scan; if(!sc||!$('#showAuto').checked) return []; const out=[]; for(const id in sc.tracks){ const tr=sc.tracks[id]; if(tr.player||tr.team==='X'||!tr.team) continue; const q=trackPosAt(tr,t); if(q) out.push({tr,x:q[0],y:q[1]}); } return out; }
 function assignTrack(trackId,playerId){
   const tr=S.scan&&S.scan.tracks[trackId]; const p=byId(playerId); if(!tr||!p) return false; let n=0;
@@ -1236,7 +1287,7 @@ function shotZone(x,y){ const left=x<C.L/2; const rx=left?C.rimX:C.L-C.rimX; con
 function logEvent(type,made,att){
   if(!S.source) return toast('先に動画を開いてください');
   const t=now(); const ev={id:uid(),t,team:S.evTeam,player:$('#evPlayer').value||null,type};
-  if(type==='2P'||type==='3P'){ ev.made=!!made; if($('#shotLoc').checked){ const b=ballPos(t); if(b){ ev.x=clamp(b[0],0,C.L); ev.y=clamp(b[1],0,C.W); } else { S.pendingShot=ev; $('#pendMsg').hidden=false; } } }
+  if(type==='2P'||type==='3P'){ ev.made=!!made; if($('#shotLoc').checked){ let b=ballPos(t); if(!b){ const ab=autoBallPos(t); if(ab) b=[ab.x,ab.y]; } if(b){ ev.x=clamp(b[0],0,C.L); ev.y=clamp(b[1],0,C.W); } else { S.pendingShot=ev; $('#pendMsg').hidden=false; } } }
   if(type==='FT'){ ev.att=att; ev.made=made; }
   P().events.push(ev); P().events.sort((a,b)=>a.t-b.t); scheduleSave(); renderStats();
   const lbl = type==='FT' ? `FT ${made}/${att}` : (EV_LABEL[type]+(ev.made===true?' 成功':ev.made===false?' 失敗':''));
@@ -1379,6 +1430,7 @@ function frame(ts){
 }
 function refreshRosterStatus(){ const t=now(); $$('#roster .prow').forEach((row,i)=>{}); const rows=[...$('#roster').querySelectorAll('.prow:not(.ballrow)')]; const ps=[...P().players.filter(p=>p.team==='A'),...P().players.filter(p=>p.team==='B')]; rows.forEach((row,i)=>{ const p=ps[i]; if(!p) return; const st=row.querySelector('.st'); const pos=playerPos(p,t); const cls=pos?'vis':p.kfs.length?'hid':''; st.className='st '+cls; st.textContent=pos?'表示中':p.kfs.length?'画面外':'未入力'; const cv=coverage(p.kfs); row.querySelector('.kfc').textContent=cv!=null?Math.round(cv*100)+'%':p.kfs.length+'KF'; if(cv!=null){ row.style.background=`linear-gradient(90deg, rgba(58,157,93,.18) ${Math.round(cv*100)}%, transparent ${Math.round(cv*100)}%)`; row.classList.toggle('done',cv>=0.9); } }); const br=$('#roster .ballrow'); if(br){ const bp=ballPos(t); const st=br.querySelector('.st'); st.className='st '+(bp?'vis':P().ball.kfs.length?'hid':''); st.textContent='ボール '+(bp?'':P().ball.kfs.length?'(非表示)':'(未入力)'); br.querySelector('.kfc').textContent=P().ball.kfs.length+'KF'; } }
 renderRoster(); renderCalibList(); applySettingsUI(); setVMode('track'); renderStats();
+if(new URLSearchParams(location.search).has('debug')) window.__ct={S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,LM,LANDMARKS,C,COURT_PATHS,ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
 { const q=new URLSearchParams(location.search).get('src'); if(q){ S.project=newProject(); S.project.name=q.split('/').pop(); mount(new VideoSource(q)); renderRoster(); renderCalibList(); } }
 requestAnimationFrame(frame);
 })();

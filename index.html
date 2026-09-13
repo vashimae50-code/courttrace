@@ -1061,13 +1061,16 @@ $('#pngBtn').addEventListener('click',()=>{ board.toBlob(b=>download('board_'+fm
 
 // ───────────────────────── AI detection (optional; loads TF.js lazily)
 let detector=null, detLoading=null;
-function loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>rej(new Error('読み込み失敗: '+src)); document.head.appendChild(s); }); }
+function loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>{ s.remove(); rej(new Error('読み込み失敗: '+src)); }; document.head.appendChild(s); }); }
+async function loadFirst(urls){ let err; for(const u of urls){ try{ await loadScript(u); return u; }catch(e){ err=e; } } throw err; }
+async function urlExists(u){ try{ const r=await fetch(u,{method:'HEAD',cache:'no-store'}); return r.ok; }catch(e){ return false; } }
 async function ensureDetector(){
   if(detector) return detector;
-  if(!detLoading) detLoading=(async()=>{ $('#detNote').textContent='モデルを読み込み中…（初回のみ、数十秒かかることがあります）';
-    await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');
-    await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
-    detector=await window.cocoSsd.load({base:'lite_mobilenet_v2'}); $('#detNote').textContent='モデル読み込み済み。枠をクリックすると足元がKFになります。'; return detector; })().catch(e=>{ detLoading=null; $('#detNote').textContent='AI検出を読み込めませんでした。ネットワーク制限のある環境（埋め込み表示など）では使えません。HTMLファイルをローカルで開くと動作します。'; throw e; });
+  if(!detLoading) detLoading=(async()=>{ $('#detNote').textContent='モデルを読み込み中…（初回のみ約18MBをダウンロードします。2回目以降は速くなります）';
+    await loadFirst(['vendor/tf.min.js','https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js']);
+    await loadFirst(['vendor/coco-ssd.min.js','https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js']);
+    const local=await urlExists('model/model.json');
+    detector=await window.cocoSsd.load(local?{base:'lite_mobilenet_v2',modelUrl:'model/model.json'}:{base:'lite_mobilenet_v2'}); $('#detNote').textContent='モデル読み込み済み。枠をクリックすると足元がKFになります。'; return detector; })().catch(e=>{ detLoading=null; $('#detNote').textContent='AI検出を読み込めませんでした。ネットワーク制限のある環境（埋め込み表示など）では使えません。HTMLファイルをローカルで開くと動作します。'; throw e; });
   return detLoading;
 }
 async function detectNow(){ const d=await ensureDetector(); const res=await d.detect(S.source.el, 20, 0.35); const W=S.source.width,H=S.source.height; S.detections=res.filter(r=>r.class==='person').map(r=>({u:r.bbox[0]/W,v:r.bbox[1]/H,w:r.bbox[2]/W,h:r.bbox[3]/H,score:r.score})); return S.detections; }
@@ -1103,7 +1106,7 @@ function kmeans(feats,k,iters=25){ if(!feats.length) return {centers:[],labels:[
   for(let it=0;it<iters;it++){ labels=feats.map(f=>{ let bi=0,bd=Infinity; centers.forEach((c,i)=>{ const d=dist2(c,f); if(d<bd){bd=d;bi=i;} }); return bi; }); const sums=centers.map(()=>[0,0,0,0,0]); feats.forEach((f,i)=>{ const sm=sums[labels[i]]; for(let j=0;j<4;j++) sm[j]+=f[j]; sm[4]++; }); sums.forEach((sm,i)=>{ if(sm[4]) centers[i]=[sm[0]/sm[4],sm[1]/sm[4],sm[2]/sm[4],sm[3]/sm[4]]; }); }
   return {centers,labels}; }
 function dist2(a,b){ let d=0; for(let i=0;i<a.length;i++) d+=(a[i]-b[i])**2; return d; }
-let jsfeatReady=null; function loadJsfeat(){ if(window.jsfeat) return Promise.resolve(); if(!jsfeatReady) jsfeatReady=loadScript('https://cdnjs.cloudflare.com/ajax/libs/jsfeat/0.0.8/jsfeat-min.js').catch(e=>{ jsfeatReady=null; throw new Error('カメラ追跡ライブラリを読み込めませんでした'); }); return jsfeatReady; }
+let jsfeatReady=null; function loadJsfeat(){ if(window.jsfeat) return Promise.resolve(); if(!jsfeatReady) jsfeatReady=loadFirst(['vendor/jsfeat-min.js','https://cdnjs.cloudflare.com/ajax/libs/jsfeat/0.0.8/jsfeat-min.js']).catch(e=>{ jsfeatReady=null; throw new Error('カメラ追跡ライブラリを読み込めませんでした'); }); return jsfeatReady; }
 const mul9=(a,b)=>{ const r=new Array(9).fill(0); for(let i=0;i<3;i++)for(let j=0;j<3;j++)for(let k=0;k<3;k++) r[i*3+j]+=a[i*3+k]*b[k*3+j]; return r; };
 const CTW=480, CTH=270;
 class CamTracker{

@@ -22,12 +22,21 @@
   --stage:#08090c; --sel:#6f9dee;
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:'Noto Sans JP',system-ui,-apple-system,sans-serif;font-size:13px;line-height:1.45;overflow:hidden}
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:2px solid var(--focus);outline-offset:1px}
-.app{display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:100vh}
+.app{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;height:100vh}
+.guide{display:flex;align-items:center;gap:12px;padding:7px 14px;background:var(--accent-soft);border-bottom:1px solid var(--line);font-size:13px;line-height:1.5}
+.guide .gstep{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:.05em;color:var(--accent);white-space:nowrap}
+.guide .gtext{flex:1;min-width:0}
+.guide .gdots{display:inline-flex;gap:5px;align-items:center;white-space:nowrap}
+.guide .gdots i{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--line)}
+.guide .gdots i.done{background:var(--ok)} .guide .gdots i.cur{background:var(--accent);box-shadow:0 0 0 2px var(--accent-soft),0 0 0 3px var(--accent)}
+.guide .btn.go{background:var(--accent);border-color:var(--accent);color:#1c1408;font-weight:600}
+.guide .close{border:0;background:transparent;color:var(--muted);font-size:16px;padding:0 4px}
 header.bar{display:flex;align-items:center;gap:10px;padding:7px 14px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
 .brand{font-family:'Barlow Condensed','Noto Sans JP',sans-serif;font-weight:700;font-size:22px;letter-spacing:.03em;display:flex;align-items:center;gap:8px;margin-right:8px}
 .brand i{display:inline-block;width:22px;height:14px;border:2px solid var(--accent);border-radius:2px;position:relative}
@@ -50,6 +59,32 @@ label.file{position:relative;overflow:hidden}
 label.file input{position:absolute;inset:0;opacity:0;cursor:pointer}
 main{display:grid;grid-template-columns:272px minmax(0,1fr) minmax(0,1fr);min-height:0}
 aside{overflow:auto;border-right:1px solid var(--line);background:var(--panel);padding:10px 12px 24px;display:flex;flex-direction:column;gap:14px}
+.tabs{display:flex;border-bottom:1px solid var(--line);margin:-4px -12px 0;padding:0 8px}
+.tabs button{flex:1;border:0;background:transparent;padding:8px 4px;font-weight:500;color:var(--muted);border-bottom:2px solid transparent;font-family:'Barlow Condensed','Noto Sans JP',sans-serif;font-size:15px;letter-spacing:.04em}
+.tabs button.on{color:var(--ink);border-bottom-color:var(--accent)}
+#tabStats{display:flex;flex-direction:column;gap:14px}
+.evgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+.evgrid .btn{padding:7px 2px;text-align:center;font-family:'Barlow Condensed','Noto Sans JP',sans-serif;font-size:14px;font-weight:600;letter-spacing:.02em}
+.evgrid .btn.made{border-color:var(--ok);color:var(--ok)}
+.evgrid .btn.miss{border-color:var(--bad);color:var(--bad)}
+.evgrid .btn.wide{grid-column:span 2}
+.ftrow{display:flex;gap:6px;align-items:center;margin-top:6px}
+.ftrow select{border:1px solid var(--line);background:var(--panel2);border-radius:5px;padding:4px 6px}
+.stt{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:12px}
+.stt th,.stt td{padding:3px 4px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.stt th:first-child,.stt td:first-child{text-align:left;color:var(--muted);font-weight:400}
+.stt thead th{font-family:'Barlow Condensed',sans-serif;font-size:14px;letter-spacing:.03em;color:var(--ink)}
+.stt td.win{font-weight:700}
+.stt td .ok{color:var(--ok)} .stt td .ng{color:var(--bad)}
+.stt tr.ff th:first-child,.stt tr.ff td{background:var(--accent-soft)}
+.evlist{display:flex;flex-direction:column;gap:2px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:4px}
+.evlist div{display:grid;grid-template-columns:52px 14px 1fr auto;gap:6px;align-items:center;padding:2px 6px;border-radius:4px;font-size:12px;cursor:pointer}
+.evlist div:hover{background:var(--panel2)}
+.evlist .t{font-family:'IBM Plex Mono',monospace;color:var(--muted)}
+.evlist .dot{width:9px;height:9px;border-radius:50%}
+.evlist .x{border:0;background:transparent;color:var(--muted);padding:0 4px}
+.evlist .x:hover{color:var(--bad)}
+.pend{background:var(--warn);color:#1c1408;padding:6px 8px;border-radius:6px;font-size:12px}
 aside h3{margin:0 0 6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;display:flex;align-items:center;gap:6px}
 aside h3 .hint{margin-left:auto;letter-spacing:0;text-transform:none;font-size:11px}
 .team{border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:8px}
@@ -94,7 +129,8 @@ aside h3 .hint{margin-left:auto;letter-spacing:0;text-transform:none;font-size:1
 .viewport canvas.ov{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
 .viewport .empty{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#a9adb7;text-align:center;padding:20px}
 .viewport .empty a{color:#e8b04a}
-.viewport .empty .lines{max-width:420px;line-height:1.7}
+.viewport .empty .lines{max-width:440px;line-height:1.7;background:rgba(8,9,12,.72);padding:12px 16px;border-radius:8px}
+.viewport .empty b{background:rgba(8,9,12,.72);padding:4px 12px;border-radius:6px}
 .viewport .empty b{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:600;letter-spacing:.04em;color:#e3e5ea}
 .transport{display:flex;align-items:center;gap:6px;padding:6px 10px;border-top:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
 .tc{font-family:'IBM Plex Mono',monospace;font-size:13px;font-variant-numeric:tabular-nums;min-width:118px}
@@ -132,10 +168,55 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
     <label class="btn file">プロジェクト読込<input type="file" id="projIn" accept="application/json"></label>
     <button class="btn" id="saveBtn">プロジェクト保存</button>
     <button class="btn" id="pngBtn">ボードをPNG保存</button>
+    <button class="btn" id="guideBtn" title="ガイドを表示" hidden>？ ガイド</button>
   </header>
+  <div class="guide" id="guide">
+    <span class="gstep" id="gStep">STEP 1</span>
+    <span class="gtext" id="gText"></span>
+    <button class="btn sm go" id="gAction" hidden></button>
+    <span class="gdots" id="gDots"><i></i><i></i><i></i><i></i><i></i></span>
+    <button class="close" id="gHide" title="ガイドを隠す" aria-label="ガイドを隠す">×</button>
+  </div>
 
   <main>
     <aside>
+      <div class="tabs"><button class="on" data-tab="tabTrack">TRACKING</button><button data-tab="tabStats">STATS</button></div>
+      <div id="tabStats" hidden>
+        <section>
+          <h3>記録するチーム</h3>
+          <div class="seg" style="display:flex"><button class="btn sm on" data-evteam="A" style="flex:1">チームA</button><button class="btn sm" data-evteam="B" style="flex:1">チームB</button></div>
+          <div class="field" style="margin-top:6px"><label>選手（任意）</label><select id="evPlayer" style="width:120px"><option value="">指定なし</option></select></div>
+        </section>
+        <section>
+          <h3>プレー記録 <span class="hint">現在の時刻に入ります</span></h3>
+          <div class="evgrid">
+            <button class="btn made" data-ev="2P:1">2P ○</button><button class="btn miss" data-ev="2P:0">2P ×</button>
+            <button class="btn made" data-ev="3P:1">3P ○</button><button class="btn miss" data-ev="3P:0">3P ×</button>
+            <button class="btn" data-ev="TO">TO</button><button class="btn" data-ev="ORB">OFF REB</button><button class="btn" data-ev="DRB">DEF REB</button><button class="btn" data-ev="STL">スティール</button>
+          </div>
+          <div class="ftrow"><span>FT</span><select id="ftAtt"><option value="1">1本</option><option value="2" selected>2本</option><option value="3">3本</option></select><span>中</span><select id="ftMade"><option>0</option><option>1</option><option selected>2</option><option>3</option></select><span>成功</span><button class="btn sm" id="ftBtn">記録</button></div>
+          <div id="pendMsg" class="pend" hidden>ボード上でシュートを打った位置をクリック（Escで位置なし）</div>
+          <div class="field"><label>シュート位置を記録する</label><input type="checkbox" id="shotLoc" checked></div>
+          <div class="field"><label>ボードにシュートチャート</label><input type="checkbox" id="shotChart" checked></div>
+          <div class="field"><label>集計範囲</label><select id="statRange" style="width:120px"><option value="all">全期間</option><option value="now">現在時刻まで</option></select></div>
+          <p class="note">シュートはボールの追跡があればその位置を自動で使い、なければボードのクリックを待ちます。TOは「シュート前に相手ボール」、FTは1セット（1回のファウルで打つ本数）単位です。</p>
+        </section>
+        <section>
+          <h3>Four Factors</h3>
+          <div id="statTable"></div>
+          <p class="note">ポゼッション = FGA − ORB + TO + 0.44×FTA。ORB%は相手DRBが記録されていればORB/(ORB+相手DRB)、なければ自チームの外したシュートに対する割合。目安（高校レベル）: FG% 40%以上、TO% 12%以下、FT 10セット、所有率 55〜60%。</p>
+        </section>
+        <section>
+          <h3>シュートゾーン</h3>
+          <div id="zoneTable"></div>
+        </section>
+        <section>
+          <h3>イベント <span class="hint" id="evCount"></span></h3>
+          <div class="evlist" id="evList"></div>
+          <div class="actions" style="margin-top:6px"><button class="btn sm" id="csvBtn">CSV書き出し</button><button class="btn sm danger" id="clearEvBtn">全削除</button></div>
+        </section>
+      </div>
+      <div id="tabTrack" style="display:contents">
       <section>
         <h3>名簿 <span class="hint">番号をクリックで編集</span></h3>
         <div id="roster"></div>
@@ -179,6 +260,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         <div class="field"><label>軌跡を表示</label><input type="checkbox" id="trails" checked></div>
         <p class="note">ショートカット: <span class="kbd">Space</span> 再生 / <span class="kbd">←→</span> 1コマ / <span class="kbd">Shift+←→</span> 1秒 / <span class="kbd">Del</span> KF削除 / <span class="kbd">Ctrl+Z</span> 描画取消</p>
       </section>
+      </div>
     </aside>
 
     <section class="stage video">
@@ -281,14 +363,14 @@ const LANDMARKS = (() => {
     const mx = x => side ? C.L-x : x;
     L.push({id:s+'c0', name:s+'コーナー（下）', x:mx(0), y:0});
     L.push({id:s+'c1', name:s+'コーナー（上）', x:mx(0), y:C.W});
-    L.push({id:s+'k0', name:s+'ペイント角 ベースライン（下）', x:mx(0), y:yc-kw});
-    L.push({id:s+'k1', name:s+'ペイント角 ベースライン（上）', x:mx(0), y:yc+kw});
     L.push({id:s+'f0', name:s+'FTライン端（下）', x:mx(C.keyL), y:yc-kw});
     L.push({id:s+'f1', name:s+'FTライン端（上）', x:mx(C.keyL), y:yc+kw});
-    L.push({id:s+'fm', name:s+'FTライン中央', x:mx(C.keyL), y:yc});
+    L.push({id:s+'tt', name:s+'3Pアーク頂点', x:mx(C.rimX+C.threeR), y:yc});
+    L.push({id:s+'k0', name:s+'ペイント角 ベースライン（下）', x:mx(0), y:yc-kw});
+    L.push({id:s+'k1', name:s+'ペイント角 ベースライン（上）', x:mx(0), y:yc+kw});
     L.push({id:s+'t0', name:s+'3Pライン 直線の端（下）', x:mx(C.threeStraight), y:C.threeSide});
     L.push({id:s+'t1', name:s+'3Pライン 直線の端（上）', x:mx(C.threeStraight), y:C.W-C.threeSide});
-    L.push({id:s+'tt', name:s+'3Pアーク頂点', x:mx(C.rimX+C.threeR), y:yc});
+    L.push({id:s+'fm', name:s+'FTライン中央', x:mx(C.keyL), y:yc});
     L.push({id:s+'rim', name:s+'リング直下', x:mx(C.rimX), y:yc});
   };
   half(0,'左 ');
@@ -349,11 +431,12 @@ const S = {
   undo: [],
   drawing: null, drag: null, calibDrag: null,
   tracking: false,
+  evTeam: 'A', pendingShot: null,
 };
 function newProject(){
   return { version:1, name:'', teams:{A:{name:'チームA',color:'#d8443c'},B:{name:'チームB',color:'#2f6fd6'}},
     players:[ ...['4','7','11','15','23'].map(n=>({id:'A'+n,team:'A',num:n,kfs:[]})), ...['3','8','12','20','33'].map(n=>({id:'B'+n,team:'B',num:n,kfs:[]})) ],
-    ball:{kfs:[]}, calibs:[], strokes:[],
+    ball:{kfs:[]}, calibs:[], strokes:[], events:[],
     settings:{maxGap:3, step:0.5, division:'none', offense:'A', trails:true, split1:5.8, split2:9.8, showProj:true} };
 }
 S.project = newProject();
@@ -604,6 +687,8 @@ function drawBoard(){
     g.fillStyle='#fff'; g.font=`700 ${R*1.35}px "Barlow Condensed",sans-serif`; g.textAlign='center'; g.textBaseline='middle'; g.fillText(p.num,px,py+R*0.05);
   }
   const b=ballPos(t); if(b){ const [px,py]=toPx(...b); const r=0.3*s; g.beginPath(); g.arc(px+r*0.15,py+r*0.2,r,0,Math.PI*2); g.fillStyle='rgba(0,0,0,.3)'; g.fill(); g.beginPath(); g.arc(px,py,r,0,Math.PI*2); g.fillStyle=cssVar('--ball'); g.fill(); g.strokeStyle='#5a2c0a'; g.lineWidth=Math.max(1,r*0.12); g.stroke(); g.beginPath(); g.moveTo(px-r,py); g.lineTo(px+r,py); g.moveTo(px,py-r); g.lineTo(px,py+r); g.stroke(); if(S.selected==='ball'){ g.beginPath(); g.arc(px,py,r+4,0,Math.PI*2); g.strokeStyle=cssVar('--sel'); g.lineWidth=2; g.stroke(); } }
+  // shot chart
+  if($('#shotChart').checked){ const lim=statLimit(); for(const ev of P().events){ if(ev.x==null||(ev.type!=='2P'&&ev.type!=='3P')||ev.t>lim) continue; const [px,py]=toPx(ev.x,ev.y); const col=P().teams[ev.team].color; const r=Math.max(4,0.28*s); g.lineWidth=Math.max(1.5,0.07*s); if(ev.made){ g.beginPath(); g.arc(px,py,r,0,Math.PI*2); g.fillStyle=col; g.fill(); g.strokeStyle='#fff'; g.stroke(); } else { g.strokeStyle=col; g.beginPath(); g.moveTo(px-r,py-r); g.lineTo(px+r,py+r); g.moveTo(px+r,py-r); g.lineTo(px-r,py+r); g.stroke(); } } }
   // strokes
   for(const sk of P().strokes) drawStroke(g,sk);
   if(S.drawing) drawStroke(g,S.drawing);
@@ -674,6 +759,7 @@ function drawTimeline(){
     // visible spans
     const kv=kfs; g.fillStyle=r.color+'33'; for(let j=0;j<kv.length-1;j++){ const a=kv[j],b=kv[j+1]; const gap=r.id==='ball'&&a.holder?1e9:P().settings.maxGap; if(a.v&&b.v&&b.t-a.t<=gap) g.fillRect(X(a.t),y+5,X(b.t)-X(a.t),rowH-10); }
   });
+  for(const ev of P().events){ const ex=X(ev.t); g.fillStyle=P().teams[ev.team]?P().teams[ev.team].color:cssVar('--muted'); g.beginPath(); g.moveTo(ex,head-9); g.lineTo(ex+3.5,head-5); g.lineTo(ex,head-1); g.lineTo(ex-3.5,head-5); g.closePath(); g.fill(); }
   const x=X(t); g.fillStyle=cssVar('--accent'); g.fillRect(x-0.5,0,1.5,H); g.beginPath(); g.moveTo(x-5,0); g.lineTo(x+5,0); g.lineTo(x,7); g.closePath(); g.fill();
   tl._geom={left,head,rowH,W,dur,X};
 }
@@ -683,6 +769,7 @@ tl.addEventListener('pointerup',()=>tlDrag=false);
 
 // ───────────────────────── roster UI
 function renderRoster(){
+  if($('#evPlayer')) fillEvPlayers();
   const host=$('#roster'); host.innerHTML=''; const t=now();
   for(const team of ['A','B']){
     const T=P().teams[team]; const box=document.createElement('div'); box.className='team';
@@ -718,7 +805,7 @@ function nextUnplaced(c){ const cur=LANDMARKS.findIndex(l=>l.id===S.lm); for(let
 function renderCalibList(){
   const c=calibAt(now()); const host=$('#calibList'); host.innerHTML=''; lmSel.value=S.lm;
   const n=c?Object.keys(c.pts).length:0;
-  $('#calibNote').textContent = !c||n<4 ? `目印を4点以上、動画上でクリックしてください（現在 ${n} 点）。合うと動画にコートの線が重なります。` : c.H ? `位置合わせ済み（${n}点、時刻 ${fmt(c.t)} から有効、誤差 ${(c.err*100).toFixed(2)}%）。ずれていれば点をドラッグして直せます。` : '点の配置が不正です（直線上に並んでいませんか？）';
+  $('#calibNote').textContent = !c||n<4 ? `目印を4点以上、動画上でクリックしてください（現在 ${n} 点）。合うと動画にコートの線が重なります。` : c.H ? `位置合わせ済み（${n}点、時刻 ${fmt(c.t)} から有効、誤差 ${(c.err*100).toFixed(2)}%）。ずれていれば点をドラッグして直せます。` : 'この組み合わせでは計算できません。同じ直線上（例: ベースライン上だけ）の点では決まらないので、FTラインの端や3Pアークの頂点など奥行きの違う点を追加してください';
   if(!c){ $('#goTrackBtn').hidden=true; return; }
   for(const l of LANDMARKS){ const d=document.createElement('div'); if(l.id===S.lm) d.classList.add('cur'); const has=!!c.pts[l.id]; d.innerHTML=`<b>${l.name}</b><span class="${has?'ok':'none'}">${has?'✓':'－'}</span>`; d.addEventListener('click',()=>{ S.lm=l.id; renderCalibList(); }); host.appendChild(d); }
   $('#goTrackBtn').hidden = !(c.H && S.vmode==='calib');
@@ -767,6 +854,7 @@ function strokeNear(x,y){ const tol=0.45; for(let i=P().strokes.length-1;i>=0;i-
 function distSeg(p,a,b){ const dx=b[0]-a[0],dy=b[1]-a[1]; const l2=dx*dx+dy*dy||1e-9; const u=clamp(((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l2,0,1); return Math.hypot(p[0]-a[0]-u*dx,p[1]-a[1]-u*dy); }
 board.addEventListener('pointerdown',e=>{
   const pt=boardPoint(e), t=now(); board.setPointerCapture(e.pointerId);
+  if(S.pendingShot){ S.pendingShot.x=clamp(pt.x,0,C.L); S.pendingShot.y=clamp(pt.y,0,C.W); S.pendingShot=null; $('#pendMsg').hidden=true; scheduleSave(); renderStats(); toast('シュート位置を記録しました'); return; }
   if(S.tool==='select'){
     const hit=hitPiece(pt.x,pt.y,t);
     if(hit){ S.selected=hit; S.drag={id:hit,moved:false}; renderRoster(); return; }
@@ -813,7 +901,7 @@ $('#showProj').addEventListener('change',e=>{P().settings.showProj=e.target.chec
 
 // ───────────────────────── persistence
 function serialize(){ const pr=P(); return JSON.stringify({...pr, calibs:pr.calibs.map(c=>({id:c.id,t:c.t,pts:c.pts}))}); }
-function loadProjectData(data){ const pr={...newProject(),...data}; pr.calibs=(data.calibs||[]).map(c=>{ const k={id:c.id||uid(),t:c.t||0,pts:c.pts||{}}; recomputeCalib(k); return k; }); pr.settings={...newProject().settings,...(data.settings||{})}; S.project=pr; S.selected=null; renderRoster(); renderCalibList(); applySettingsUI();
+function loadProjectData(data){ const pr={...newProject(),...data}; pr.calibs=(data.calibs||[]).map(c=>{ const k={id:c.id||uid(),t:c.t||0,pts:c.pts||{}}; recomputeCalib(k); return k; }); pr.settings={...newProject().settings,...(data.settings||{})}; pr.events=(data.events||[]); S.project=pr; S.selected=null; renderRoster(); renderCalibList(); applySettingsUI(); renderStats();
   if(pr.source&&pr.source.type==='youtube' && !(S.source&&S.source.kind==='youtube'&&S.source.id===pr.source.id)){ $('#ytUrl').value='https://www.youtube.com/watch?v='+pr.source.id; openYouTube(pr.source.id,0,true); } }
 let saveTimer; function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ try{ if(S.source&&(S.source.kind==='video'||S.source.kind==='youtube')) localStorage.setItem('courttrace:'+S.source.key, serialize()); }catch(e){} },600); }
 function loadAutosave(name){ try{ const s=localStorage.getItem('courttrace:'+name); if(s){ loadProjectData(JSON.parse(s)); toast('前回の作業内容を復元しました（'+name+'）'); } }catch(e){} }
@@ -859,9 +947,113 @@ $('#autoTrackBtn').addEventListener('click',async()=>{
   stopTracking(); renderRoster(); $('#detNote').textContent=`自動追跡を終了（${n}KF追加）。ずれた箇所はボードでコマをドラッグして直せます。`;
 });
 
+// ───────────────────────── stats (Four Factors)
+$$('.tabs button').forEach(b=>b.addEventListener('click',()=>{ $$('.tabs button').forEach(x=>x.classList.toggle('on',x===b)); $('#tabTrack').style.display = b.dataset.tab==='tabTrack'?'contents':'none'; $('#tabStats').hidden = b.dataset.tab!=='tabStats'; if(b.dataset.tab==='tabStats') renderStats(); }));
+$$('[data-evteam]').forEach(b=>b.addEventListener('click',()=>{ S.evTeam=b.dataset.evteam; $$('[data-evteam]').forEach(x=>x.classList.toggle('on',x===b)); fillEvPlayers(); }));
+function fillEvPlayers(){ const sel=$('#evPlayer'); const cur=sel.value; sel.innerHTML='<option value="">指定なし</option>'; for(const p of P().players.filter(p=>p.team===S.evTeam)){ const o=document.createElement('option'); o.value=p.id; o.textContent='#'+p.num; sel.appendChild(o); } sel.value=cur; $$('[data-evteam]').forEach(x=>x.textContent=P().teams[x.dataset.evteam].name); }
+const EV_LABEL={'2P':'2P','3P':'3P',FT:'FT',TO:'ターンオーバー',ORB:'OFFリバウンド',DRB:'DEFリバウンド',STL:'スティール'};
+function shotZone(x,y){ const left=x<C.L/2; const rx=left?C.rimX:C.L-C.rimX; const d=Math.hypot(x-rx,y-C.W/2); const fromBase=left?x:C.L-x; const is3 = fromBase<C.threeStraight ? Math.abs(y-C.W/2)>C.W/2-C.threeSide : d>C.threeR; if(is3) return '3P'; return d<=2.4?'リング付近':'ミドル'; }
+function logEvent(type,made,att){
+  if(!S.source) return toast('先に動画を開いてください');
+  const t=now(); const ev={id:uid(),t,team:S.evTeam,player:$('#evPlayer').value||null,type};
+  if(type==='2P'||type==='3P'){ ev.made=!!made; if($('#shotLoc').checked){ const b=ballPos(t); if(b){ ev.x=clamp(b[0],0,C.L); ev.y=clamp(b[1],0,C.W); } else { S.pendingShot=ev; $('#pendMsg').hidden=false; } } }
+  if(type==='FT'){ ev.att=att; ev.made=made; }
+  P().events.push(ev); P().events.sort((a,b)=>a.t-b.t); scheduleSave(); renderStats();
+  const lbl = type==='FT' ? `FT ${made}/${att}` : (EV_LABEL[type]+(ev.made===true?' 成功':ev.made===false?' 失敗':''));
+  toast(`${P().teams[S.evTeam].name}: ${lbl} を ${fmt(t)} に記録`+(S.pendingShot?'。ボードで位置をクリック':''),2500);
+}
+$$('[data-ev]').forEach(b=>b.addEventListener('click',()=>{ const [type,m]=b.dataset.ev.split(':'); logEvent(type, m==null?undefined:m==='1'); }));
+$('#ftAtt').addEventListener('change',e=>{ const n=+e.target.value; const m=$('#ftMade'); m.innerHTML=''; for(let i=0;i<=n;i++){ const o=document.createElement('option'); o.textContent=i; m.appendChild(o); } m.value=n; });
+$('#ftBtn').addEventListener('click',()=>logEvent('FT',+$('#ftMade').value,+$('#ftAtt').value));
+$('#statRange').addEventListener('change',renderStats); $('#shotChart').addEventListener('change',()=>{});
+function statLimit(){ return $('#statRange').value==='now' ? now()+1e-6 : Infinity; }
+function teamStats(team,lim){
+  const ev=P().events.filter(e=>e.team===team&&e.t<=lim); const opp=P().events.filter(e=>e.team!==team&&e.t<=lim);
+  const st={fga:0,fgm:0,tpa:0,tpm:0,fta:0,ftm:0,ftSets:0,to:0,orb:0,drb:0,stl:0,zones:{'リング付近':[0,0],'ミドル':[0,0],'3P':[0,0]}};
+  for(const e of ev){ if(e.type==='2P'||e.type==='3P'){ st.fga++; if(e.made) st.fgm++; if(e.type==='3P'){ st.tpa++; if(e.made) st.tpm++; } const z=e.x!=null?shotZone(e.x,e.y):(e.type==='3P'?'3P':null); if(z){ st.zones[z][0]++; if(e.made) st.zones[z][1]++; } }
+    else if(e.type==='FT'){ st.fta+=e.att; st.ftm+=e.made; st.ftSets++; } else if(e.type==='TO') st.to++; else if(e.type==='ORB') st.orb++; else if(e.type==='DRB') st.drb++; else if(e.type==='STL') st.stl++; }
+  st.oppDrb=opp.filter(e=>e.type==='DRB').length; st.oppTo=opp.filter(e=>e.type==='TO').length;
+  st.poss=st.fga-st.orb+st.to+0.44*st.fta; st.possSimple=st.fga+st.ftSets+st.to;
+  st.fgp=st.fga?st.fgm/st.fga:null; st.efg=st.fga?(st.fgm+0.5*st.tpm)/st.fga:null; st.top=st.poss>0?st.to/st.poss:null;
+  st.orbp = st.orb+st.oppDrb>0 ? st.orb/(st.orb+st.oppDrb) : (st.fga-st.fgm>0 ? st.orb/(st.fga-st.fgm) : null);
+  st.ftr=st.fga?st.fta/st.fga:null; st.pts=2*(st.fgm-st.tpm)+3*st.tpm+st.ftm;
+  return st;
+}
+const pct=v=>v==null?'－':(v*100).toFixed(1)+'%';
+function renderStats(){
+  fillEvPlayers();
+  const lim=statLimit(); const A=teamStats('A',lim), B=teamStats('B',lim); const T=P().teams;
+  const totalPoss=A.poss+B.poss; const shareA=totalPoss>0?A.poss/totalPoss:null, shareB=totalPoss>0?B.poss/totalPoss:null;
+  const rows=[
+    ['得点',A.pts,B.pts,'hi'],
+    ['ポゼッション',A.poss.toFixed(1),B.poss.toFixed(1)],
+    ['攻撃回数(簡易: FGA+FTセット+TO)',A.possSimple,B.possSimple],
+    ['ボール所有率',pct(shareA),pct(shareB),'hi',v=>v>=0.55],
+    ['FG',`${A.fgm}/${A.fga}`,`${B.fgm}/${B.fga}`],
+    ['FG%',pct(A.fgp),pct(B.fgp),'hi',v=>v>=0.40],
+    ['eFG%',pct(A.efg),pct(B.efg),'hi',null,'ff'],
+    ['3P',`${A.tpm}/${A.tpa}`,`${B.tpm}/${B.tpa}`],
+    ['TO',A.to,B.to,'lo'],
+    ['TO%',pct(A.top),pct(B.top),'lo',v=>v<=0.12,'ff'],
+    ['OFFリバウンド',A.orb,B.orb,'hi'],
+    ['ORB%',pct(A.orbp),pct(B.orbp),'hi',null,'ff'],
+    ['FT',`${A.ftm}/${A.fta}`,`${B.ftm}/${B.fta}`],
+    ['FTセット数',A.ftSets,B.ftSets,'hi',v=>v>=10],
+    ['FTレート (FTA/FGA)',A.ftr==null?'－':A.ftr.toFixed(2),B.ftr==null?'－':B.ftr.toFixed(2),'hi',null,'ff'],
+    ['DEFリバウンド',A.drb,B.drb,'hi'],
+    ['スティール / 相手TO誘発',`${A.stl} / ${A.oppTo}`,`${B.stl} / ${B.oppTo}`],
+  ];
+  const raw={ '得点':[A.pts,B.pts],'ボール所有率':[shareA,shareB],'FG%':[A.fgp,B.fgp],'eFG%':[A.efg,B.efg],'TO':[A.to,B.to],'TO%':[A.top,B.top],'OFFリバウンド':[A.orb,B.orb],'ORB%':[A.orbp,B.orbp],'FTセット数':[A.ftSets,B.ftSets],'FTレート (FTA/FGA)':[A.ftr,B.ftr],'DEFリバウンド':[A.drb,B.drb] };
+  let h=`<table class="stt"><thead><tr><th></th><th style="color:${T.A.color}">${T.A.name}</th><th style="color:${T.B.color}">${T.B.name}</th></tr></thead><tbody>`;
+  for(const [name,a,b,dir,target,cls] of rows){ const rv=raw[name]; let wa='',wb=''; if(rv&&rv[0]!=null&&rv[1]!=null&&rv[0]!==rv[1]){ const aWins=dir==='lo'?rv[0]<rv[1]:rv[0]>rv[1]; wa=aWins?' class="win"':''; wb=aWins?'':' class="win"'; }
+    const mark=(v)=>{ if(!target||v==null) return ''; return target(v)?' <span class="ok">●</span>':' <span class="ng">●</span>'; };
+    h+=`<tr${cls?' class="'+cls+'"':''}><th>${name}</th><td${wa}>${a}${mark(rv?rv[0]:null)}</td><td${wb}>${b}${mark(rv?rv[1]:null)}</td></tr>`; }
+  h+='</tbody></table>'; $('#statTable').innerHTML=h;
+  let z=`<table class="stt"><thead><tr><th>ゾーン</th><th style="color:${T.A.color}">${T.A.name}</th><th style="color:${T.B.color}">${T.B.name}</th></tr></thead><tbody>`;
+  for(const zn of ['リング付近','ミドル','3P']){ const [aa,am]=A.zones[zn],[ba,bm]=B.zones[zn]; z+=`<tr><th>${zn}</th><td>${am}/${aa} <span style="color:var(--muted)">${aa?pct(am/aa):''}</span></td><td>${bm}/${ba} <span style="color:var(--muted)">${ba?pct(bm/ba):''}</span></td></tr>`; }
+  z+='</tbody></table>'; $('#zoneTable').innerHTML=z;
+  const list=$('#evList'); list.innerHTML=''; const evs=P().events.slice().reverse().slice(0,60); $('#evCount').textContent=P().events.length+'件';
+  for(const e of evs){ const d=document.createElement('div'); const pl=e.player&&byId(e.player)?' #'+byId(e.player).num:''; const lbl=e.type==='FT'?`FT ${e.made}/${e.att}`:EV_LABEL[e.type]+(e.made===true?' ○':e.made===false?' ×':'')+(e.x!=null?' ・'+shotZone(e.x,e.y):'');
+    d.innerHTML=`<span class="t">${fmt(e.t)}</span><span class="dot" style="background:${T[e.team].color}"></span><span>${lbl}${pl}</span><button class="x" title="削除">×</button>`;
+    d.addEventListener('click',ev=>{ if(ev.target.closest('button')) return; seek(e.t); }); d.querySelector('.x').addEventListener('click',()=>{ P().events=P().events.filter(x=>x!==e); scheduleSave(); renderStats(); }); list.appendChild(d); }
+}
+$('#clearEvBtn').addEventListener('click',()=>{ if(!P().events.length) return; if(!confirm('記録したイベントをすべて削除しますか？')) return; P().events=[]; S.pendingShot=null; $('#pendMsg').hidden=true; scheduleSave(); renderStats(); });
+$('#csvBtn').addEventListener('click',()=>{ const T=P().teams; const rows=[['time_sec','time','team','player','type','made','attempts','x_m','y_m','zone']]; for(const e of P().events){ const pl=e.player&&byId(e.player)?byId(e.player).num:''; rows.push([e.t.toFixed(2),fmt(e.t),T[e.team].name,pl,e.type,e.made===true?1:e.made===false?0:(e.made??''),e.att??'',e.x!=null?e.x.toFixed(2):'',e.y!=null?e.y.toFixed(2):'',e.x!=null?shotZone(e.x,e.y):'']); }
+  const A=teamStats('A',Infinity),B=teamStats('B',Infinity); rows.push([]); rows.push(['summary','',T.A.name,'',T.B.name]); for(const [k,va,vb] of [['PTS',A.pts,B.pts],['POSS',A.poss.toFixed(1),B.poss.toFixed(1)],['eFG%',pct(A.efg),pct(B.efg)],['TO%',pct(A.top),pct(B.top)],['ORB%',pct(A.orbp),pct(B.orbp)],['FT_rate',A.ftr==null?'':A.ftr.toFixed(2),B.ftr==null?'':B.ftr.toFixed(2)]]) rows.push([k,'',va,'',vb]);
+  const csv='﻿'+rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n'); download((P().name||'game').replace(/\.[^.]+$/,'')+'_stats.csv',new Blob([csv],{type:'text/csv'})); });
+let statTick=0, guideTick=0;
+
+// ───────────────────────── guide (state-driven next-step bar)
+const GUIDE_STEPS=5; let guideKey='';
+function guideState(){
+  if(!S.source) return {n:1,text:'試合の動画を読み込みます。「動画を開く」で手元のファイル、「YouTubeを開く」で共有されたURL。初めての方は「デモ映像で試す」で流れを確認するのがおすすめです。',action:['デモ映像で試す',()=>$('#demoBtn').click()]};
+  const c=calibAt(now()); const n=c?Object.keys(c.pts).length:0;
+  if(!c||!c.H){
+    if(S.vmode!=='calib') return {n:2,text:'カメラの向きをコートに合わせます。「目印を置く」を押してから、動画に映っているコートの目印（コーナー、FTラインの端、3Pアークの頂点など）を4点以上クリックします。',action:['目印を置く',()=>setVMode('calib')]};
+    const lm=LM[S.lm]; return {n:2,text:`いま選ばれている目印「${lm?lm.name:''}」を、動画の中でクリックしてください（現在 ${n} 点、4点以上で完了）。ボード上のオレンジの点が、その目印の場所です。映っていない目印は左の一覧から別のものを選べます。`};
+  }
+  if(S.vmode==='calib') return {n:2,text:'緑の線が映像のコートの線と重なっていれば成功です。ずれていれば点をドラッグして直してください。合ったら追跡に進みます。',action:['追跡に進む',()=>$('#goTrackBtn').click()]};
+  if(S.selected && !entity(S.selected)) S.selected=null;
+  if(!S.selected) return {n:3,text:'左の名簿で、最初に入力する選手の行をクリックして選びます。番号の数字をクリックすると背番号を実際の番号に変えられます。'};
+  const e=entity(S.selected); const label=S.selected==='ball'?'ボール':'#'+byId(S.selected).num+' の選手';
+  if(!e.kfs.length) return {n:4,text:`動画を一時停止し、映像の中の ${label} の足元をクリックしてください。ボードにコマが現れ、動画が少し先に進みます。`};
+  return {n:5,text:`${label} を追いかけます。進んだ先でまた足元をクリック（1〜2秒おきで十分、間は自動でつながります）。映らなくなったら「画面外にする」。終わったら名簿で次の選手へ。再生して確認し、ずれはボードのコマをドラッグして直せます。得点やTOを付けるなら左上の STATS タブへ。`};
+}
+function updateGuide(){
+  const g=$('#guide'); if(g.hidden) return; const st=guideState(); const key=st.n+'|'+st.text+'|'+(st.action?st.action[0]:'');
+  if(key===guideKey) return; guideKey=key;
+  $('#gStep').textContent='STEP '+st.n+'/'+GUIDE_STEPS; $('#gText').textContent=st.text;
+  const a=$('#gAction'); if(st.action){ a.hidden=false; a.textContent=st.action[0]; a.onclick=st.action[1]; } else { a.hidden=true; a.onclick=null; }
+  [...$('#gDots').children].forEach((d,i)=>{ d.className=i+1<st.n?'done':i+1===st.n?'cur':''; });
+}
+$('#gHide').addEventListener('click',()=>{ $('#guide').hidden=true; $('#guideBtn').hidden=false; try{ localStorage.setItem('courttrace:guide','off'); }catch(e){} });
+$('#guideBtn').addEventListener('click',()=>{ $('#guide').hidden=false; $('#guideBtn').hidden=true; guideKey=''; try{ localStorage.removeItem('courttrace:guide'); }catch(e){} });
+try{ if(localStorage.getItem('courttrace:guide')==='off'){ $('#guide').hidden=true; $('#guideBtn').hidden=false; } }catch(e){}
+
 // ───────────────────────── keyboard
 document.addEventListener('keydown',e=>{
   if(e.target.matches('input,select,textarea')) return;
+  if(e.key==='Escape'&&S.pendingShot){ S.pendingShot=null; $('#pendMsg').hidden=true; renderStats(); return; }
   if(e.code==='Space'){ e.preventDefault(); togglePlay(); }
   else if(e.key==='ArrowLeft'){ e.preventDefault(); seek(now()-(e.shiftKey?1:1/FPS)); }
   else if(e.key==='ArrowRight'){ e.preventDefault(); seek(now()+(e.shiftKey?1:1/FPS)); }
@@ -876,10 +1068,12 @@ function frame(ts){
   const dt=(ts-lastNow)/1000; lastNow=ts;
   if(S.source){ S.source.tick(dt); const t=now(), dur=S.source.duration; $('#tc').textContent=fmt(t)+' / '+fmt(dur); if(!scrubbing) scrub.value=dur?Math.round(t/dur*1000):0; updatePlayBtn(); if(Math.abs(t-lastRosterT)>0.2){ lastRosterT=t; refreshRosterStatus(); } }
   drawBoard(); drawOverlay(); drawTimeline();
+  if(!$('#tabStats').hidden && $('#statRange').value==='now' && ts-statTick>500){ statTick=ts; renderStats(); }
+  if(ts-guideTick>300){ guideTick=ts; updateGuide(); }
   requestAnimationFrame(frame);
 }
 function refreshRosterStatus(){ const t=now(); $$('#roster .prow').forEach((row,i)=>{}); const rows=[...$('#roster').querySelectorAll('.prow:not(.ballrow)')]; const ps=[...P().players.filter(p=>p.team==='A'),...P().players.filter(p=>p.team==='B')]; rows.forEach((row,i)=>{ const p=ps[i]; if(!p) return; const st=row.querySelector('.st'); const pos=playerPos(p,t); const cls=pos?'vis':p.kfs.length?'hid':''; st.className='st '+cls; st.textContent=pos?'表示中':p.kfs.length?'画面外':'未入力'; row.querySelector('.kfc').textContent=p.kfs.length+'KF'; }); const br=$('#roster .ballrow'); if(br){ const bp=ballPos(t); const st=br.querySelector('.st'); st.className='st '+(bp?'vis':P().ball.kfs.length?'hid':''); st.textContent='ボール '+(bp?'':P().ball.kfs.length?'(非表示)':'(未入力)'); br.querySelector('.kfc').textContent=P().ball.kfs.length+'KF'; } }
-renderRoster(); renderCalibList(); applySettingsUI(); setVMode('track');
+renderRoster(); renderCalibList(); applySettingsUI(); setVMode('track'); renderStats();
 requestAnimationFrame(frame);
 })();
 </script>

@@ -102,7 +102,9 @@ aside h3 .hint{margin-left:auto;letter-spacing:0;text-transform:none;font-size:1
 .prow .st::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--line)}
 .prow .st.vis::before{background:var(--ok)}
 .prow .st.hid::before{background:var(--warn)}
-.prow .kfc{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)}
+.prow .kfc{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);white-space:nowrap}
+.prow.done .st{color:var(--ok)}
+.seglbl{font-family:'IBM Plex Mono',monospace;font-size:12px}
 .prow .x{border:0;background:transparent;color:var(--muted);padding:0 4px;font-size:14px}
 .prow .x:hover{color:var(--bad)}
 .addp{width:100%;border:0;border-top:1px dashed var(--line);background:transparent;padding:5px;color:var(--muted);font-size:12px}
@@ -171,6 +173,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
     <button class="btn" id="ytBtn" type="submit">YouTubeを開く</button></form>
     <button class="btn" id="demoBtn">デモ映像で試す</button>
     <span class="spacer"></span>
+    <button class="btn" id="newProjBtn" title="この動画の入力内容をすべて消して最初から">新規プロジェクト</button>
     <label class="btn file">プロジェクト読込<input type="file" id="projIn" accept="application/json"></label>
     <button class="btn" id="saveBtn">プロジェクト保存</button>
     <button class="btn" id="pngBtn">ボードをPNG保存</button>
@@ -180,7 +183,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
     <span class="gstep" id="gStep">STEP 1</span>
     <span class="gtext" id="gText"></span>
     <button class="btn sm go" id="gAction" hidden></button>
-    <span class="gdots" id="gDots"><i></i><i></i><i></i><i></i><i></i></span>
+    <span class="gdots" id="gDots"><i></i><i></i><i></i><i></i><i></i><i></i></span>
     <button class="close" id="gHide" title="ガイドを隠す" aria-label="ガイドを隠す">×</button>
   </div>
 
@@ -224,6 +227,12 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
       </div>
       <div id="tabTrack" style="display:contents">
       <section>
+        <h3>解析する区間 <span class="hint">1プレー 10〜20秒が目安</span></h3>
+        <div class="actions"><button class="btn sm" id="segStartBtn">ここから</button><button class="btn sm" id="segEndBtn">ここまで</button><span class="seglbl" id="segLabel">未設定</span><button class="btn sm" id="segClearBtn" hidden>解除</button></div>
+        <div class="actions" style="margin-top:6px"><button class="btn sm" id="scanBtn">区間を一括自動追跡（AI）</button></div>
+        <p class="note" id="scanNote">スキャン後は、動画に出る枠を（選手を選んでから）クリックするだけで、その人が映っている間の動きがまとめて入ります。手元の動画ファイルのみ対応。</p>
+      </section>
+      <section>
         <h3>名簿 <span class="hint">番号をクリックで編集</span></h3>
         <div id="roster"></div>
         <div class="actions">
@@ -266,7 +275,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
       <section>
         <h3>設定</h3>
         <div class="field"><label>KFの空きが何秒超えたら非表示</label><input type="number" id="maxGap" min="0.5" max="30" step="0.5" value="3"></div>
-        <div class="field"><label>動画クリック後に進む秒数</label><input type="number" id="stepSec" min="0" max="5" step="0.1" value="0.5"></div>
+        <div class="field"><label>動画クリック後に進む秒数</label><input type="number" id="stepSec" min="0" max="5" step="0.1" value="1"></div>
         <div class="field"><label>6分割 1本目 (ベースラインから m)</label><input type="number" id="split1" min="3" max="10" step="0.1" value="5.8"></div>
         <div class="field"><label>6分割 2本目 (m)</label><input type="number" id="split2" min="6" max="14" step="0.1" value="9.8"></div>
         <div class="field"><label>軌跡を表示</label><input type="checkbox" id="trails" checked></div>
@@ -449,7 +458,7 @@ function newProject(){
   return { version:1, name:'', teams:{A:{name:'チームA',color:'#d8443c'},B:{name:'チームB',color:'#2f6fd6'}},
     players:[ ...['4','7','11','15','23'].map(n=>({id:'A'+n,team:'A',num:n,kfs:[]})), ...['3','8','12','20','33'].map(n=>({id:'B'+n,team:'B',num:n,kfs:[]})) ],
     ball:{kfs:[]}, calibs:[], strokes:[], events:[],
-    settings:{maxGap:3, step:0.5, division:'none', offense:'A', trails:true, split1:5.8, split2:9.8, showProj:true} };
+    settings:{maxGap:3, step:1.0, seg:null, division:'none', offense:'A', trails:true, split1:5.8, split2:9.8, showProj:true} };
 }
 S.project = newProject();
 const P = () => S.project;
@@ -757,7 +766,8 @@ function drawOverlay(){
     return;
   }
   // detections
-  for(const d of S.detections){ const [x,y]=I(d.u,d.v); const w=d.w*r.w, h=d.h*r.h; g.strokeStyle='rgba(255,215,80,.9)'; g.lineWidth=1.5; g.strokeRect(x,y,w,h); g.beginPath(); g.arc(x+w/2,y+h,4,0,Math.PI*2); g.fillStyle='rgba(255,215,80,.95)'; g.fill(); }
+  for(const d of S.detections){ const [x,y]=I(d.u,d.v); const w=d.w*r.w, h=d.h*r.h; g.strokeStyle='rgba(255,215,80,.9)'; g.lineWidth=1.5; g.strokeRect(x,y,w,h); g.beginPath(); g.arc(x+w/2,y+h,4,0,Math.PI*2); g.fillStyle='rgba(255,215,80,.95)'; g.fill();
+    if(d.track){ g.fillStyle='rgba(255,215,80,.9)'; g.fillRect(x,y-14,26,14); g.fillStyle='#1c1408'; g.font='700 11px "Barlow Condensed",sans-serif'; g.textAlign='left'; g.textBaseline='middle'; g.fillText('T'+d.track,x+3,y-7); } }
   // pieces reprojected into the video
   if(c&&c.Hi){ for(const p of P().players){ const q=playerPos(p,t); if(!q) continue; const im=applyH(c.Hi,q[0],q[1]); if(!im||im[2]<=0) continue; const [px,py]=I(im[0],im[1]); const col=P().teams[p.team].color; g.beginPath(); g.arc(px,py,S.selected===p.id?9:7,0,Math.PI*2); g.fillStyle=col; g.globalAlpha=.85; g.fill(); g.globalAlpha=1; g.strokeStyle='#fff'; g.lineWidth=S.selected===p.id?2.5:1.2; g.stroke(); g.fillStyle='#fff'; g.font='700 10px "Barlow Condensed",sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(p.num,px,py+0.5); }
     const b=ballPos(t); if(b){ const im=applyH(c.Hi,b[0],b[1]); if(im&&im[2]>0){ const [px,py]=I(im[0],im[1]); g.beginPath(); g.arc(px,py-8,4.5,0,Math.PI*2); g.fillStyle='#e8862e'; g.fill(); g.strokeStyle='#fff'; g.lineWidth=1; g.stroke(); } } }
@@ -779,6 +789,7 @@ function drawTimeline(){
     // visible spans
     const kv=kfs; g.fillStyle=r.color+'33'; for(let j=0;j<kv.length-1;j++){ const a=kv[j],b=kv[j+1]; const gap=r.id==='ball'&&a.holder?1e9:P().settings.maxGap; if(a.v&&b.v&&b.t-a.t<=gap) g.fillRect(X(a.t),y+5,X(b.t)-X(a.t),rowH-10); }
   });
+  { const g2=seg(); if(g2){ g.fillStyle='rgba(196,138,59,.14)'; g.fillRect(X(g2.a),0,X(g2.b)-X(g2.a),H); g.fillStyle=cssVar('--accent'); g.fillRect(X(g2.a)-1,0,2,H); g.fillRect(X(g2.b)-1,0,2,H); } }
   for(const ev of P().events){ const ex=X(ev.t); g.fillStyle=P().teams[ev.team]?P().teams[ev.team].color:cssVar('--muted'); g.beginPath(); g.moveTo(ex,head-9); g.lineTo(ex+3.5,head-5); g.lineTo(ex,head-1); g.lineTo(ex-3.5,head-5); g.closePath(); g.fill(); }
   const x=X(t); g.fillStyle=cssVar('--accent'); g.fillRect(x-0.5,0,1.5,H); g.beginPath(); g.moveTo(x-5,0); g.lineTo(x+5,0); g.lineTo(x,7); g.closePath(); g.fill();
   tl._geom={left,head,rowH,W,dur,X};
@@ -786,6 +797,15 @@ function drawTimeline(){
 tl.addEventListener('pointerdown',e=>{ const gm=tl._geom; if(!gm) return; const rect=tl.getBoundingClientRect(); const x=e.clientX-rect.left, y=e.clientY-rect.top; if(x<gm.left){ const i=Math.floor((y-gm.head)/gm.rowH); if(tlRows[i]){ S.selected=tlRows[i].id; renderRoster(); } return; } tlDrag=true; tl.setPointerCapture(e.pointerId); seek((x-gm.left)/(gm.W-gm.left-10)*gm.dur); });
 tl.addEventListener('pointermove',e=>{ if(!tlDrag) return; const gm=tl._geom; const rect=tl.getBoundingClientRect(); seek(clamp((e.clientX-rect.left-gm.left)/(gm.W-gm.left-10),0,1)*gm.dur); });
 tl.addEventListener('pointerup',()=>tlDrag=false);
+
+// ───────────────────────── segment & coverage
+const seg=()=>{ const g=P().settings.seg; return (g&&g.b>g.a)?g:null; };
+function coverage(kfs){ const g=seg(); if(!g) return null; let cov=0,n=0; for(let t=g.a;t<=g.b+1e-6;t+=0.25){ n++; if(kfs.some(k=>Math.abs(k.t-t)<=1.5)) cov++; } return n?cov/n:0; }
+function uncoveredSec(kfs){ const g=seg(); if(!g) return 0; let u=0; for(let t=g.a;t<=g.b+1e-6;t+=0.25){ if(!kfs.some(k=>Math.abs(k.t-t)<=1.5)) u+=0.25; } return u; }
+function renderSeg(){ const g=P().settings.seg||{}; const lbl=$('#segLabel'); if(g.a==null&&g.b==null){ lbl.textContent='未設定'; } else lbl.textContent=(g.a!=null?fmt(g.a):'?')+' 〜 '+(g.b!=null?fmt(g.b):'?')+(seg()?` (${(g.b-g.a).toFixed(0)}秒)`:''); $('#segClearBtn').hidden=(g.a==null&&g.b==null); }
+$('#segStartBtn').addEventListener('click',()=>{ const g=P().settings.seg||(P().settings.seg={}); g.a=now(); if(g.b!=null&&g.b<=g.a) g.b=null; scheduleSave(); renderSeg(); renderRoster(); toast('区間の開始を '+fmt(g.a)+' にしました。プレーの終わりまで進めて「ここまで」'); });
+$('#segEndBtn').addEventListener('click',()=>{ const g=P().settings.seg||(P().settings.seg={}); if(g.a==null){ g.a=Math.max(0,now()-15); } g.b=now(); if(g.b<=g.a) return toast('終了は開始より後の時刻にしてください'); scheduleSave(); renderSeg(); renderRoster(); toast(`区間 ${fmt(g.a)}〜${fmt(g.b)}（${(g.b-g.a).toFixed(0)}秒）。1人あたり約 ${Math.ceil((g.b-g.a)/1.5)} 回のクリックが目安です`,5000); seek(g.a); });
+$('#segClearBtn').addEventListener('click',()=>{ P().settings.seg=null; S.scan=null; scheduleSave(); renderSeg(); renderRoster(); });
 
 // ───────────────────────── roster UI
 function renderRoster(){
@@ -798,7 +818,9 @@ function renderRoster(){
     box.appendChild(h);
     for(const p of P().players.filter(p=>p.team===team)){
       const row=document.createElement('div'); row.className='prow'+(S.selected===p.id?' sel':''); const pos=playerPos(p,t); const hasK=p.kfs.length>0;
-      row.innerHTML=`<input class="num" value="${p.num}" maxlength="3" aria-label="背番号"><span class="st ${pos?'vis':hasK?'hid':''}">${pos?'表示中':hasK?'画面外':'未入力'}</span><span class="kfc">${p.kfs.length}KF</span><button class="x" title="削除">×</button>`;
+      const cv=coverage(p.kfs); if(cv!=null&&cv>=0.9) row.classList.add('done');
+      row.innerHTML=`<input class="num" value="${p.num}" maxlength="3" aria-label="背番号"><span class="st ${pos?'vis':hasK?'hid':''}">${pos?'表示中':hasK?'画面外':'未入力'}</span><span class="kfc">${cv!=null?Math.round(cv*100)+'%':p.kfs.length+'KF'}</span><button class="x" title="削除">×</button>`;
+      if(cv!=null) row.style.background=`linear-gradient(90deg, rgba(58,157,93,.18) ${Math.round(cv*100)}%, transparent ${Math.round(cv*100)}%)`;
       row.addEventListener('click',e=>{ if(e.target.closest('input,button')) return; S.selected=p.id; renderRoster(); });
       const num=row.querySelector('.num'); num.addEventListener('change',()=>{ p.num=num.value.trim()||p.num; num.value=p.num; scheduleSave(); });
       num.addEventListener('focus',()=>{ S.selected=p.id; $$('.prow').forEach(r=>r.classList.remove('sel')); row.classList.add('sel'); });
@@ -847,7 +869,8 @@ function wizSkip(){ if(!S.wiz||!S.lm) return; S.wiz.skipped[S.lm]=true; const cu
 function wizConfirm(){ const c=wizCalib(); if(!c||!c.H||Object.keys(c.pts).length<4) return toast('点が4つ以上そろい、緑の線が合ってから確定してください'); if(S.wiz.phase==='L'){ S.wiz.phase='Ldone'; S.lm=null; toast('左コートを確定しました。次は右コートが映っている時刻まで動画を進めてください。',5000); } else { S.wiz.phase='done'; S.lm=null; setVMode('track'); toast('右コートも確定しました。位置合わせ完了です。名簿で選手を選んで追跡を始めましょう。',5000); } renderCalibList(); }
 function wizStartRightShift(){ const t=now(); const left=wizCalib(); if(left&&Math.abs(left.t-t)<0.5) return toast('先に、右コートが映っている時刻まで動画を進めてください（下のタイムラインやスライダーで移動）',5000); if(P().calibs.some(k=>Math.abs(k.t-t)<0.05)) return toast('同じ時刻に既に位置合わせがあります'); const c={id:uid(),t,pts:{},H:null,Hi:null}; recomputeCalib(c); P().calibs.push(c); P().calibs.sort((a,b)=>a.t-b.t); scheduleSave(); wizStart('R',c); toast(`${fmt(t)} から右コートの位置合わせを始めます。光っている点の場所を動画でクリックしてください。`,5000); }
 function wizStartRightSame(){ const c=wizCalib(); if(!c) return; S.wiz.phase='R'; S.wiz.skipped={}; wizNext(); renderCalibList(); }
-function wizBegin(){ const t=now(); let c=calibAt(t); if(!c||Object.keys(c.pts).length===0){ c=ensureCalib(t); wizStart('L',c); } else { setVMode('calib'); } }
+function wizBegin(){ const t=now(); const c=ensureCalib(t); if(S.wiz&&S.wiz.calibId===c.id&&S.wiz.phase!=='done'){ setVMode('calib'); renderCalibList(); return; } wizStart('L',c); }
+function wizReset(){ const c=wizCalib()||ensureCalib(now()); if(Object.keys(c.pts).length&&!confirm('この位置合わせの点をすべて消して、左コートからやり直しますか？')) return; c.pts={}; S.ptOrder=[]; recomputeCalib(c); scheduleSave(); wizStart('L',c); }
 function renderWizard(){
   const box=$('#wizBox'); const w=S.wiz; if(!w||w.phase==='done'||S.vmode!=='calib'){ box.hidden=true; return; }
   const c=wizCalib(); if(!c){ box.hidden=true; return; } box.hidden=false; const n=Object.keys(c.pts).length; const ok=c.H&&n>=4;
@@ -858,6 +881,7 @@ function renderWizard(){
     $('#wizCur').textContent = S.lm ? `次の点: 「${LM[S.lm].name}」 → 動画でクリック` : (ok ? '点を置き終えました。緑の線が合っていれば確定してください。' : '候補の点を使い切りました。ボードで別の点をクリックするか、時刻を変えてやり直してください。');
     if(S.lm) mk('この点は映っていない（スキップ）',wizSkip);
     mk(WIZ_NAME[w.phase]+'を確定',wizConfirm,ok);
+    if(n) mk('点を全消去してやり直す',wizReset);
   } else if(w.phase==='Ldone'){
     $('#wizTitle').textContent='① 左コート 確定済み'; $('#wizProg').textContent=`${n}点`;
     $('#wizCur').textContent='次は右コート。右コートが映っている時刻まで動画を進めてから、下のボタンを押してください。';
@@ -891,7 +915,9 @@ ov.addEventListener('pointerdown',e=>{
   }
   if(!S.selected) return toast('先に名簿から選手かボールを選んでください');
   let u=pt.u, v=pt.v;
-  const det=S.detections.find(d=>pt.u>=d.u&&pt.u<=d.u+d.w&&pt.v>=d.v&&pt.v<=d.v+d.h); if(det){ u=det.u+det.w/2; v=det.v+det.h; }
+  const det=S.detections.find(d=>pt.u>=d.u&&pt.u<=d.u+d.w&&pt.v>=d.v&&pt.v<=d.v+d.h);
+  if(det&&det.track&&S.selected!=='ball'&&S.scan){ if(assignTrack(det.track,S.selected)) return; }
+  if(det){ u=det.u+det.w/2; v=det.v+det.h; }
   const q=imgToCourt(u,v,t); if(!q) return toast('先に「位置合わせ」でコートの目印を4点以上置いてください',4000);
   placeEntity(S.selected,[clamp(q[0],-1,C.L+1),clamp(q[1],-1,C.W+1)],t,true);
 });
@@ -903,7 +929,7 @@ function placeEntity(id,pos,t,advance){
     if(best){ setKf(P().ball.kfs,{t,v:true,holder:best.id,x:pos[0],y:pos[1]}); toast(`ボール: #${best.num} が保持`); } else setKf(P().ball.kfs,{t,v:true,x:pos[0],y:pos[1]});
   } else setKf(byId(id).kfs,{t,v:true,x:pos[0],y:pos[1]});
   renderRoster();
-  const st=P().settings.step; if(advance&&st>0&&S.source&&S.source.paused) seek(t+st);
+  const st=P().settings.step; if(advance&&st>0&&S.source&&S.source.paused){ const g=seg(); if(g&&t<g.b-0.01&&t+st>g.b){ seek(g.b); toast('区間の終わりです'); } else if(g&&t>=g.b-0.01){ toast('区間の終わりです。名簿で次の選手を選んでください',3000); } else seek(t+st); }
 }
 
 // ───────────────────────── board interaction
@@ -948,7 +974,7 @@ $('#undoBtn').addEventListener('click',undoDraw);
 $('#clearDrawBtn').addEventListener('click',()=>{ if(!P().strokes.length) return; S.undo.push(P().strokes.slice()); P().strokes=[]; scheduleSave(); });
 
 // ───────────────────────── settings
-function applySettingsUI(){ const st=P().settings; $('#maxGap').value=st.maxGap; $('#stepSec').value=st.step; $('#split1').value=st.split1; $('#split2').value=st.split2; $('#trails').checked=st.trails; $('#division').value=st.division; $('#offense').value=st.offense; $('#showProj').checked=st.showProj;
+function applySettingsUI(){ const st=P().settings; renderSeg(); $('#maxGap').value=st.maxGap; $('#stepSec').value=st.step; $('#split1').value=st.split1; $('#split2').value=st.split2; $('#trails').checked=st.trails; $('#division').value=st.division; $('#offense').value=st.offense; $('#showProj').checked=st.showProj;
   $('#offense').options[0].textContent='OF: '+P().teams.A.name; $('#offense').options[1].textContent='OF: '+P().teams.B.name; }
 $('#maxGap').addEventListener('change',e=>{P().settings.maxGap=parseFloat(e.target.value)||3; scheduleSave();});
 $('#stepSec').addEventListener('change',e=>{P().settings.step=parseFloat(e.target.value)||0; scheduleSave();});
@@ -964,12 +990,13 @@ function serialize(){ const pr=P(); return JSON.stringify({...pr, calibs:pr.cali
 function loadProjectData(data){ const pr={...newProject(),...data}; pr.calibs=(data.calibs||[]).map(c=>{ const k={id:c.id||uid(),t:c.t||0,pts:c.pts||{}}; recomputeCalib(k); return k; }); pr.settings={...newProject().settings,...(data.settings||{})}; pr.events=(data.events||[]); S.project=pr; S.selected=null; S.lm=null; S.ptOrder=[]; S.wiz=null; renderRoster(); renderCalibList(); applySettingsUI(); renderStats();
   if(pr.source&&pr.source.type==='youtube' && !(S.source&&S.source.kind==='youtube'&&S.source.id===pr.source.id)){ $('#ytUrl').value='https://www.youtube.com/watch?v='+pr.source.id; openYouTube(pr.source.id,0,true); } }
 let saveTimer; function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ try{ if(S.source&&(S.source.kind==='video'||S.source.kind==='youtube')) localStorage.setItem('courttrace:'+S.source.key, serialize()); }catch(e){} },600); }
-function loadAutosave(name){ try{ const s=localStorage.getItem('courttrace:'+name); if(s){ loadProjectData(JSON.parse(s)); toast('前回の作業内容を復元しました（'+name+'）'); } }catch(e){} }
+function loadAutosave(name){ try{ const s=localStorage.getItem('courttrace:'+name); if(s){ loadProjectData(JSON.parse(s)); toast('前回の作業内容を復元しました。最初からやり直す場合は上の「新規プロジェクト」を押してください。',7000); } }catch(e){} }
 async function download(name,blob){
   try{ const dl = (window.claude && window.claude.use) ? await window.claude.use('downloads') : null;
     if(dl){ try{ await dl.save({filename:name, data:blob}); toast('保存しました: '+name); }catch(e){ if(e&&e.code!=='declined') toast('保存できませんでした: '+(e.message||e.code)); } return; } }catch(e){}
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},1000); }
 $('#saveBtn').addEventListener('click',async()=>{ const json=serialize(); const name=(P().name||'project').replace(/\.[^.]+$/,'')+'.courttrace.json'; try{ await navigator.clipboard.writeText(json); }catch(e){} await download(name,new Blob([json],{type:'application/json'})); });
+$('#newProjBtn').addEventListener('click',()=>{ if(!confirm('この動画の入力内容（位置合わせ・キーフレーム・描画・スタッツ）をすべて消して最初からやり直しますか？')) return; const src=S.source; const name=P().name; S.project=newProject(); S.project.name=name; if(src){ S.project.source = src.kind==='youtube' ? {type:'youtube',id:src.id} : src.kind==='video' ? {type:'file',name:src.name} : {type:'demo'}; try{ localStorage.removeItem('courttrace:'+src.key); }catch(e){} } S.selected=null; S.lm=null; S.ptOrder=[]; S.wiz=null; S.scan=null; S.undo=[]; renderRoster(); renderCalibList(); applySettingsUI(); renderStats(); scheduleSave(); toast('新規プロジェクトにしました'); });
 $('#projIn').addEventListener('change',e=>{ const f=e.target.files[0]; if(!f) return; f.text().then(txt=>{ try{ loadProjectData(JSON.parse(txt)); toast(P().source&&P().source.type==='youtube' ? 'プロジェクトを読み込み、YouTube動画を開いています。' : 'プロジェクトを読み込みました。同じ動画を「動画を開く」で開いてください。',4500); }catch(err){ toast('読み込めませんでした: '+err.message); } }); e.target.value=''; });
 $('#pngBtn').addEventListener('click',()=>{ board.toBlob(b=>download('board_'+fmt(now()).replace(/[:.]/g,'-')+'.png',b)); });
 
@@ -1006,6 +1033,41 @@ $('#autoTrackBtn').addEventListener('click',async()=>{
   }
   stopTracking(); renderRoster(); $('#detNote').textContent=`自動追跡を終了（${n}KF追加）。ずれた箇所はボードでコマをドラッグして直せます。`;
 });
+
+// ───────────────────────── batch scan: detect everyone across the segment, build tracklets
+S.scan=null;
+$('#scanBtn').addEventListener('click',async()=>{
+  if(!S.source) return toast('先に動画を開いてください'); if(S.source.kind==='youtube') return toast(YT_NO_AI,6000);
+  const g=seg(); if(!g) return toast('先に「ここから」「ここまで」で区間を決めてください',4000);
+  if(!calibAt(g.a)||!calibAt(g.a).H) return toast('位置合わせが必要です');
+  try{ await ensureDetector(); }catch(e){ return toast(e.message,6000); }
+  S.source.pause(); updatePlayBtn(); trackAbort=false; S.tracking=true; $('#stopTrackBtn').hidden=false; $('#scanBtn').disabled=true;
+  const dt=0.25, frames=[], tracks=[]; let active=[], nextId=1; const t0=performance.now();
+  for(let t=g.a; t<=g.b+1e-6 && !trackAbort; t+=dt){
+    await S.source.seekAsync(t); let dets; try{ dets=await detectNow(); }catch(e){ break; }
+    const cand=[]; dets.forEach((d,di)=>{ const fu=d.u+d.w/2, fv=d.v+d.h; active.forEach((tr,ti)=>{ const dist=Math.hypot(fu-tr.fu,fv-tr.fv); const thr=Math.max(0.035,0.45*d.h); if(dist<thr) cand.push([dist,di,ti]); }); });
+    cand.sort((a,b)=>a[0]-b[0]); const usedD=new Set(), usedT=new Set();
+    for(const [dist,di,ti] of cand){ if(usedD.has(di)||usedT.has(ti)) continue; usedD.add(di); usedT.add(ti); const d=dets[di], tr=active[ti]; tr.fu=d.u+d.w/2; tr.fv=d.v+d.h; tr.miss=0; tr.pts.push({t,fu:tr.fu,fv:tr.fv}); d.track=tr.id; }
+    dets.forEach((d,di)=>{ if(usedD.has(di)) return; const tr={id:nextId++,fu:d.u+d.w/2,fv:d.v+d.h,miss:0,pts:[{t,fu:d.u+d.w/2,fv:d.v+d.h}]}; active.push(tr); tracks.push(tr); d.track=tr.id; });
+    active.forEach((tr,ti)=>{ if(!usedT.has(ti)) tr.miss++; }); active=active.filter(tr=>tr.miss<=4);
+    frames.push({t,dets});
+    $('#scanNote').innerHTML=`<span class="progress">スキャン中 ${fmt(t)} / ${fmt(g.b)}（${Math.round((t-g.a)/(g.b-g.a)*100)}%）</span>`;
+  }
+  stopTracking(); $('#scanBtn').disabled=false;
+  const good=tracks.filter(tr=>tr.pts.length>=3); S.scan={a:g.a,b:g.b,dt,frames,tracks:Object.fromEntries(tracks.map(tr=>[tr.id,tr]))};
+  seek(g.a); S.source.currentTime=g.a;
+  $('#scanNote').textContent=`スキャン完了（${((performance.now()-t0)/1000).toFixed(0)}秒、人の動き ${good.length} 本）。名簿で選手を選び、動画の枠をクリックすると、その人の動きがまとめて入ります。途中で見失った場合は、その時刻でもう一度枠をクリックしてください。`;
+  toast('スキャン完了。選手を選んで、動画の枠をクリックしてください。',5000);
+});
+function scanFrameAt(t){ const sc=S.scan; if(!sc||t<sc.a-sc.dt||t>sc.b+sc.dt) return null; let best=null,bd=sc.dt*0.51; for(const f of sc.frames){ const d=Math.abs(f.t-t); if(d<bd){bd=d;best=f;} } return best; }
+function assignTrack(trackId,playerId){
+  const tr=S.scan&&S.scan.tracks[trackId]; const p=byId(playerId); if(!tr||!p) return false; let n=0;
+  for(const pt of tr.pts){ const q=imgToCourt(pt.fu,pt.fv,pt.t); if(!q) continue; setKf(p.kfs,{t:pt.t,v:true,x:clamp(q[0],-1,C.L+1),y:clamp(q[1],-1,C.W+1)}); n++; }
+  const tEnd=tr.pts[tr.pts.length-1].t; const g=seg();
+  if(g&&tEnd<g.b-0.6){ setKf(p.kfs,{t:tEnd+0.3,v:false}); toast(`#${p.num}: ${fmt(tr.pts[0].t)}〜${fmt(tEnd)} を入力（${n}点）。${fmt(tEnd)} で見失っています。そこへ移動してもう一度枠をクリックすると続きが入ります`,7000); seek(tEnd); }
+  else toast(`#${p.num}: ${fmt(tr.pts[0].t)}〜${fmt(tEnd)} を入力しました（${n}点）`,4000);
+  renderRoster(); return true;
+}
 
 // ───────────────────────── stats (Four Factors)
 $$('.tabs button').forEach(b=>b.addEventListener('click',()=>{ $$('.tabs button').forEach(x=>x.classList.toggle('on',x===b)); $('#tabTrack').style.display = b.dataset.tab==='tabTrack'?'contents':'none'; $('#tabStats').hidden = b.dataset.tab!=='tabStats'; if(b.dataset.tab==='tabStats') renderStats(); }));
@@ -1084,7 +1146,7 @@ $('#csvBtn').addEventListener('click',()=>{ const T=P().teams; const rows=[['tim
 let statTick=0, guideTick=0;
 
 // ───────────────────────── guide (state-driven next-step bar)
-const GUIDE_STEPS=5; let guideKey='';
+const GUIDE_STEPS=6; let guideKey='';
 function guideState(){
   if(!S.source) return {n:1,text:'試合の動画を読み込みます。「動画を開く」で手元のファイル、「YouTubeを開く」で共有されたURL。初めての方は「デモ映像で試す」で流れを確認するのがおすすめです。',action:['デモ映像で試す',()=>$('#demoBtn').click()]};
   const c=calibAt(now()); const n=c?Object.keys(c.pts).length:0;
@@ -1096,10 +1158,19 @@ function guideState(){
   }
   if(S.vmode==='calib'){ const gw=guideWizard(Object.keys(c.pts).length); if(gw) return gw; return {n:2,text:'緑の線が映像のコートの線と重なっていれば成功です。ずれていれば点をドラッグして直してください。合ったら追跡に進みます。',action:['追跡に進む',()=>$('#goTrackBtn').click()]}; }
   if(S.selected && !entity(S.selected)) S.selected=null;
-  if(!S.selected) return {n:3,text:'左の名簿で、最初に入力する選手の行をクリックして選びます。番号の数字をクリックすると背番号を実際の番号に変えられます。'};
-  const e=entity(S.selected); const label=S.selected==='ball'?'ボール':'#'+byId(S.selected).num+' の選手';
-  if(!e.kfs.length) return {n:4,text:`動画を一時停止し、映像の中の ${label} の足元をクリックしてください。ボードにコマが現れ、動画が少し先に進みます。`};
-  return {n:5,text:`${label} を追いかけます。進んだ先でまた足元をクリック（1〜2秒おきで十分、間は自動でつながります）。映らなくなったら「画面外にする」。終わったら名簿で次の選手へ。再生して確認し、ずれはボードのコマをドラッグして直せます。得点やTOを付けるなら左上の STATS タブへ。`};
+  const g=seg(); const sg=P().settings.seg||{};
+  if(!g){ if(sg.a!=null) return {n:3,text:`区間の開始は ${fmt(sg.a)}。プレーの終わりまで動画を進めて「ここまで」を押してください。長いほど入力が増えるので、まずは10〜20秒がおすすめです。`,action:['ここまで（現在時刻）',()=>$('#segEndBtn').click()]};
+    return {n:3,text:'先に「どのプレーを起こすか」を決めます。解析したいプレーの始まりの時刻で「ここから」、終わりで「ここまで」。この区間の中だけ入力すれば完了です（全部の時間を入力する必要はありません）。',action:['ここから（現在時刻）',()=>$('#segStartBtn').click()]}; }
+  const off=P().players.filter(p=>p.team===P().settings.offense); const todo=off.filter(p=>(coverage(p.kfs)||0)<0.9); const todoStr=todo.map(p=>'#'+p.num).join(' ');
+  const canAI=S.source.kind==='video';
+  if(!S.selected){ if(!todo.length) return {n:6,text:`${P().teams[P().settings.offense].name} の5人は区間 ${fmt(g.a)}〜${fmt(g.b)} の入力が完了です。再生して確認し、ずれはボードでコマをドラッグして直してください。相手チームやボールも必要なら同様に。STATS タブで得点やTOの記録もできます。`};
+    return {n:4,text:`名簿で選手をクリックして選びます（未入力: ${todoStr}）。`+(canAI?'AIに任せるなら「区間を一括自動追跡」を押し、終わったら選手を選んで動画の枠をクリックするだけです。':'YouTube再生ではAI追跡が使えないため、手で入力します。')+'',action: canAI&&!S.scan?['区間を一括自動追跡（AI）',()=>$('#scanBtn').click()]:null}; }
+  const e=entity(S.selected); const label=S.selected==='ball'?'ボール':'#'+byId(S.selected).num;
+  if(S.selected==='ball') return {n:5,text:'ボールは、持っている選手のコマをボード上でクリックすると「保持」になります。パスが出た時刻で受け手のコマをクリック。シュートは STATS タブで記録します。'};
+  const cv=coverage(e.kfs)||0, rem=uncoveredSec(e.kfs), clicks=Math.ceil(rem/Math.max(0.5,P().settings.step||1));
+  if(cv>=0.9) return {n:5,text:`${label} は区間の入力が完了（${Math.round(cv*100)}%）。名簿で次の選手を選んでください（未入力: ${todoStr||'なし'}）。`};
+  if(S.scan) return {n:5,text:`${label}: 区間の ${Math.round(cv*100)}% 入力済み。動画の中の ${label} の枠（T番号付き）をクリックすると、映っている間の動きがまとめて入ります。枠が切れている時刻は、そこへ移動してもう一度クリック。`};
+  return {n:5,text:`${label}: 区間の ${Math.round(cv*100)}% 入力済み、あと約 ${clicks} 回。動画を止めて足元をクリック → 自動で ${P().settings.step}秒進む → またクリック。映っていない間は「画面外にする」（Hキー）。`+(canAI?'クリックが多いと感じたら「区間を一括自動追跡」へ。':'')};
 }
 function guideWizard(n){
   const w=S.wiz; if(!w) return null; const c=wizCalib(); if(!c) return null; const ok=c.H&&Object.keys(c.pts).length>=4;
@@ -1138,12 +1209,13 @@ let lastNow=performance.now(), lastRosterT=-1;
 function frame(ts){
   const dt=(ts-lastNow)/1000; lastNow=ts;
   if(S.source){ S.source.tick(dt); const t=now(), dur=S.source.duration; $('#tc').textContent=fmt(t)+' / '+fmt(dur); if(!scrubbing) scrub.value=dur?Math.round(t/dur*1000):0; updatePlayBtn(); if(Math.abs(t-lastRosterT)>0.2){ lastRosterT=t; refreshRosterStatus(); } }
+  if(S.scan&&!S.tracking){ const f=scanFrameAt(now()); S.detections=f?f.dets:[]; }
   drawBoard(); drawOverlay(); drawTimeline();
   if(!$('#tabStats').hidden && $('#statRange').value==='now' && ts-statTick>500){ statTick=ts; renderStats(); }
   if(ts-guideTick>300){ guideTick=ts; updateGuide(); }
   requestAnimationFrame(frame);
 }
-function refreshRosterStatus(){ const t=now(); $$('#roster .prow').forEach((row,i)=>{}); const rows=[...$('#roster').querySelectorAll('.prow:not(.ballrow)')]; const ps=[...P().players.filter(p=>p.team==='A'),...P().players.filter(p=>p.team==='B')]; rows.forEach((row,i)=>{ const p=ps[i]; if(!p) return; const st=row.querySelector('.st'); const pos=playerPos(p,t); const cls=pos?'vis':p.kfs.length?'hid':''; st.className='st '+cls; st.textContent=pos?'表示中':p.kfs.length?'画面外':'未入力'; row.querySelector('.kfc').textContent=p.kfs.length+'KF'; }); const br=$('#roster .ballrow'); if(br){ const bp=ballPos(t); const st=br.querySelector('.st'); st.className='st '+(bp?'vis':P().ball.kfs.length?'hid':''); st.textContent='ボール '+(bp?'':P().ball.kfs.length?'(非表示)':'(未入力)'); br.querySelector('.kfc').textContent=P().ball.kfs.length+'KF'; } }
+function refreshRosterStatus(){ const t=now(); $$('#roster .prow').forEach((row,i)=>{}); const rows=[...$('#roster').querySelectorAll('.prow:not(.ballrow)')]; const ps=[...P().players.filter(p=>p.team==='A'),...P().players.filter(p=>p.team==='B')]; rows.forEach((row,i)=>{ const p=ps[i]; if(!p) return; const st=row.querySelector('.st'); const pos=playerPos(p,t); const cls=pos?'vis':p.kfs.length?'hid':''; st.className='st '+cls; st.textContent=pos?'表示中':p.kfs.length?'画面外':'未入力'; const cv=coverage(p.kfs); row.querySelector('.kfc').textContent=cv!=null?Math.round(cv*100)+'%':p.kfs.length+'KF'; if(cv!=null){ row.style.background=`linear-gradient(90deg, rgba(58,157,93,.18) ${Math.round(cv*100)}%, transparent ${Math.round(cv*100)}%)`; row.classList.toggle('done',cv>=0.9); } }); const br=$('#roster .ballrow'); if(br){ const bp=ballPos(t); const st=br.querySelector('.st'); st.className='st '+(bp?'vis':P().ball.kfs.length?'hid':''); st.textContent='ボール '+(bp?'':P().ball.kfs.length?'(非表示)':'(未入力)'); br.querySelector('.kfc').textContent=P().ball.kfs.length+'KF'; } }
 renderRoster(); renderCalibList(); applySettingsUI(); setVMode('track'); renderStats();
 requestAnimationFrame(frame);
 })();

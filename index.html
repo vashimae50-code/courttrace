@@ -1120,11 +1120,13 @@ class CamTracker{
 }
 const I3=[[1,0,0],[0,1,0],[0,0,1]];
 function lerpMat(D,u){ return D.map((row,i)=>row.map((v,j)=>I3[i][j]+(v-I3[i][j])*u)); }
-async function runScan(a,b){
+function explainErr(e){ const m=(e&&e.message)||String(e); if(/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'AIモデル（人物検出）のダウンロードに失敗しました。このネットワークでは storage.googleapis.com への接続が遮断されている可能性があります。別のネットワーク（スマホのテザリングなど）で再度お試しください。'; if(/WebGL|shader|texture|GPU/i.test(m)) return 'GPU（WebGL）でエラーが起きました。ブラウザのタブを閉じて開き直すか、他の重いタブを閉じてから再度お試しください。'; if(/jsfeat|カメラ追跡/.test(m)) return 'カメラ追跡ライブラリ（cdnjs.cloudflare.com）を読み込めませんでした。ネットワークをご確認ください。'; return '自動解析でエラーが発生しました。'; }
+async function runScan(a,b){ try{ return await runScanInner(a,b); }catch(e){ console.error(e); stopTracking(); $('#autoAllBtn').disabled=false; $('#scanBtn').disabled=false; const msg=explainErr(e)+'（詳細: '+((e&&e.message)||e)+'）'; $('#scanNote').textContent=msg; toast(msg,9000); } }
+async function runScanInner(a,b){
   if(!S.source) return toast('先に動画を開いてください'); if(S.source.kind!=='video') return toast(S.source.kind==='youtube'?YT_NO_AI:'自動解析は動画ファイルで使えます',6000);
   const anchors=P().calibs.filter(c=>c.H).slice().sort((p,q)=>p.t-q.t);
   if(!anchors.length) return toast('先に位置合わせをしてください（コート外の人を除外し、位置をボードに変換するために必要です）',5000);
-  try{ await ensureDetector(); await loadJsfeat(); }catch(e){ return toast(e.message,6000); }
+  await ensureDetector(); await loadJsfeat();
   if(anchors[0].t>a+0.5){ a=anchors[0].t; toast(`最初の位置合わせがある ${fmt(a)} から解析を始めます`,4000); }
   if(b-a<1) return toast('解析範囲が短すぎます');
   const dtDet=parseFloat($('#scanDt').value)||0.5, rate=parseFloat($('#scanRate').value)||1; const el=S.source.el; const W=S.source.width,H=S.source.height;

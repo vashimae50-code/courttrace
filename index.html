@@ -1049,7 +1049,18 @@ function serialize(){ const pr=P(); return JSON.stringify({...pr, calibs:pr.cali
 function loadProjectData(data){ const pr={...newProject(),...data}; pr.calibs=(data.calibs||[]).map(c=>{ const k={id:c.id||uid(),t:c.t||0,pts:c.pts||{},thumb:(c.thumb&&c.thumb.length===576)?c.thumb:null}; recomputeCalib(k); return k; }); S.viewCache=null; S.viewLast=null; pr.settings={...newProject().settings,...(data.settings||{})}; pr.events=(data.events||[]); S.project=pr; S.selected=null; S.lm=null; S.ptOrder=[]; S.wiz=null; renderRoster(); renderCalibList(); applySettingsUI(); renderStats();
   if(pr.source&&pr.source.type==='youtube' && !(S.source&&S.source.kind==='youtube'&&S.source.id===pr.source.id)){ $('#ytUrl').value='https://www.youtube.com/watch?v='+pr.source.id; openYouTube(pr.source.id,0,true); } }
 let saveTimer; function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ try{ if(S.source&&(S.source.kind==='video'||S.source.kind==='youtube')) localStorage.setItem('courttrace:'+S.source.key, serialize()); }catch(e){} },600); }
-function loadAutosave(name){ try{ const s=localStorage.getItem('courttrace:'+name); if(s){ loadProjectData(JSON.parse(s)); toast('前回の作業内容を復元しました。最初からやり直す場合は上の「新規プロジェクト」を押してください。',7000); } }catch(e){} loadScan(name); }
+function loadAutosave(key){
+  let raw=null, scanRaw=null; try{ raw=localStorage.getItem('courttrace:'+key); scanRaw=localStorage.getItem('courttrace:scan:'+key); }catch(e){}
+  if(!raw&&!scanRaw) return;
+  let info='';
+  try{ const d=JSON.parse(raw||'{}'); const kf=(d.players||[]).reduce((a,p)=>a+(p.kfs||[]).length,0); info=`位置合わせ ${(d.calibs||[]).length}件、キーフレーム ${kf}件、記録 ${(d.events||[]).length}件${scanRaw?'、自動解析の結果あり':''}`; }catch(e){}
+  const ok=confirm(`この動画には前回の作業内容があります（${info}）。
+
+[OK] 復元して続きから始める
+[キャンセル] 前回の内容を消して、新しく始める`);
+  if(ok){ try{ if(raw) loadProjectData(JSON.parse(raw)); }catch(e){} loadScan(key); toast('前回の作業内容を復元しました',4000); }
+  else { try{ localStorage.removeItem('courttrace:'+key); localStorage.removeItem('courttrace:scan:'+key); }catch(e){} S.scan=null; renderClusters(); scheduleSave(); toast('新しく始めます',3000); }
+}
 async function download(name,blob){
   try{ const dl = (window.claude && window.claude.use) ? await window.claude.use('downloads') : null;
     if(dl){ try{ await dl.save({filename:name, data:blob}); toast('保存しました: '+name); }catch(e){ if(e&&e.code!=='declined') toast('保存できませんでした: '+(e.message||e.code)); } return; } }catch(e){}

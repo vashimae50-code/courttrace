@@ -1,0 +1,885 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>コートトレース</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Noto+Sans+JP:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f1efe9; --panel:#ffffff; --panel2:#e9e6dd; --ink:#1c1e24; --muted:#6a6e78; --line:#d9d5cb;
+  --accent:#c48a3b; --accent-soft:#f3e4c8; --court:#d9b177; --court-edge:#b58a4f; --court-line:#fbf3e4; --paint:#cfa066;
+  --ball:#e8862e; --ok:#3a9d5d; --warn:#d99a1e; --bad:#d8443c; --focus:#2f6fd6; --stage:#0d0e12;
+  --sel:#2f6fd6;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#15171c; --panel:#1e2128; --panel2:#272b34; --ink:#e9e7e1; --muted:#8f939d; --line:#31353f;
+    --accent:#d9a860; --accent-soft:#3b3122; --court:#b3874c; --court-edge:#7d5a2d; --court-line:#f6ecd8; --paint:#a1743f;
+    --stage:#08090c; --sel:#6f9dee;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#15171c; --panel:#1e2128; --panel2:#272b34; --ink:#e9e7e1; --muted:#8f939d; --line:#31353f;
+  --accent:#d9a860; --accent-soft:#3b3122; --court:#b3874c; --court-edge:#7d5a2d; --court-line:#f6ecd8; --paint:#a1743f;
+  --stage:#08090c; --sel:#6f9dee;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Noto Sans JP',system-ui,-apple-system,sans-serif;font-size:13px;line-height:1.45;overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.app{display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:100vh}
+header.bar{display:flex;align-items:center;gap:10px;padding:7px 14px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+.brand{font-family:'Barlow Condensed','Noto Sans JP',sans-serif;font-weight:700;font-size:22px;letter-spacing:.03em;display:flex;align-items:center;gap:8px;margin-right:8px}
+.brand i{display:inline-block;width:22px;height:14px;border:2px solid var(--accent);border-radius:2px;position:relative}
+.brand i::after{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;width:2px;background:var(--accent);transform:translateX(-50%)}
+.spacer{flex:1}
+.urlin{border:1px solid var(--line);background:var(--panel2);border-radius:6px;padding:5px 8px;width:250px;min-width:120px}
+.viewport .ytwrap{position:absolute;background:#000}
+.viewport .ytwrap iframe{width:100%;height:100%;display:block;border:0}
+.btn{border:1px solid var(--line);background:var(--panel2);border-radius:6px;padding:5px 10px;line-height:1.2;white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn.on{background:var(--accent);border-color:var(--accent);color:#1c1408;font-weight:500}
+.btn.sm{padding:3px 7px;font-size:12px}
+.btn.icon{padding:4px 8px;font-family:'IBM Plex Mono',monospace}
+.btn.danger{color:var(--bad)}
+.btn:disabled{opacity:.45;cursor:default}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg .btn{border:0;border-radius:0;border-right:1px solid var(--line)}
+.seg .btn:last-child{border-right:0}
+label.file{position:relative;overflow:hidden}
+label.file input{position:absolute;inset:0;opacity:0;cursor:pointer}
+main{display:grid;grid-template-columns:272px minmax(0,1fr) minmax(0,1fr);min-height:0}
+aside{overflow:auto;border-right:1px solid var(--line);background:var(--panel);padding:10px 12px 24px;display:flex;flex-direction:column;gap:14px}
+aside h3{margin:0 0 6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;display:flex;align-items:center;gap:6px}
+aside h3 .hint{margin-left:auto;letter-spacing:0;text-transform:none;font-size:11px}
+.team{border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:8px}
+.team-h{display:flex;align-items:center;gap:8px;padding:6px 8px;background:var(--panel2)}
+.team-h .sw{width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px var(--line)}
+.team-h input{flex:1;min-width:0;border:0;background:transparent;font-weight:500;padding:2px 4px;border-radius:4px}
+.team-h input:hover{background:var(--panel)}
+.team-h .role{font-size:11px;color:var(--muted)}
+.prow{display:grid;grid-template-columns:38px 1fr auto auto;align-items:center;gap:6px;padding:4px 8px;border-top:1px solid var(--line);cursor:pointer}
+.prow:hover{background:var(--panel2)}
+.prow.sel{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.prow .num{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:18px;width:36px;text-align:center;border:1px solid transparent;border-radius:4px;background:transparent;padding:0}
+.prow .num:hover,.prow .num:focus{border-color:var(--line);background:var(--panel)}
+.prow .st{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px}
+.prow .st::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--line)}
+.prow .st.vis::before{background:var(--ok)}
+.prow .st.hid::before{background:var(--warn)}
+.prow .kfc{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)}
+.prow .x{border:0;background:transparent;color:var(--muted);padding:0 4px;font-size:14px}
+.prow .x:hover{color:var(--bad)}
+.addp{width:100%;border:0;border-top:1px dashed var(--line);background:transparent;padding:5px;color:var(--muted);font-size:12px}
+.addp:hover{color:var(--ink);background:var(--panel2)}
+.ballrow .num{font-size:13px;font-family:'Noto Sans JP',sans-serif;font-weight:500}
+.actions{display:flex;flex-wrap:wrap;gap:6px}
+.field{display:flex;align-items:center;gap:8px;margin:4px 0}
+.field label{flex:1;color:var(--muted)}
+.field input[type=number],.field select{width:84px;border:1px solid var(--line);background:var(--panel2);border-radius:5px;padding:3px 6px}
+.field input[type=range]{flex:1}
+.note{color:var(--muted);font-size:12px;margin:4px 0 0}
+.calib-pts{display:flex;flex-direction:column;gap:2px;max-height:150px;overflow:auto;border:1px solid var(--line);border-radius:6px;padding:4px}
+.calib-pts div{display:flex;justify-content:space-between;gap:6px;padding:2px 6px;border-radius:4px;font-size:12px}
+.calib-pts div.cur{background:var(--accent-soft)}
+.calib-pts b{font-weight:500}
+.calib-pts .ok{color:var(--ok)}
+.calib-pts .none{color:var(--muted)}
+.stage{display:flex;flex-direction:column;min-width:0;min-height:0;border-right:1px solid var(--line)}
+.stage:last-child{border-right:0}
+.stage-h{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap;min-height:38px}
+.stage-h .ttl{font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:16px;letter-spacing:.04em;margin-right:6px}
+.viewport{flex:1;position:relative;min-height:0;background:var(--stage);overflow:hidden}
+.viewport video,.viewport canvas.media{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
+.viewport canvas.ov{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+.viewport .empty{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#a9adb7;text-align:center;padding:20px}
+.viewport .empty a{color:#e8b04a}
+.viewport .empty .lines{max-width:420px;line-height:1.7}
+.viewport .empty b{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:600;letter-spacing:.04em;color:#e3e5ea}
+.transport{display:flex;align-items:center;gap:6px;padding:6px 10px;border-top:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+.tc{font-family:'IBM Plex Mono',monospace;font-size:13px;font-variant-numeric:tabular-nums;min-width:118px}
+.transport input[type=range]{flex:1;min-width:120px;accent-color:var(--accent)}
+.boardwrap{flex:1;position:relative;min-height:0;background:var(--bg)}
+.boardwrap canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+.boardwrap .txtin{position:absolute;border:1px solid var(--accent);background:var(--panel);padding:3px 6px;border-radius:4px;font-size:13px;min-width:120px}
+.color{width:22px;height:22px;border-radius:50%;border:2px solid var(--panel);box-shadow:0 0 0 1px var(--line);cursor:pointer;padding:0}
+.color.on{box-shadow:0 0 0 2px var(--ink)}
+footer.tl{border-top:1px solid var(--line);background:var(--panel);grid-column:1/-1}
+footer.tl canvas{display:block;width:100%;touch-action:none}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;opacity:0;transition:.2s;pointer-events:none;z-index:9;max-width:80vw}
+.toast.show{opacity:1;transform:translateX(-50%)}
+.kbd{font-family:'IBM Plex Mono',monospace;font-size:11px;border:1px solid var(--line);border-radius:3px;padding:0 4px;color:var(--muted)}
+.modeinfo{font-size:12px;color:var(--muted);margin-left:auto}
+.progress{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--accent)}
+@media (max-width:1100px){
+  main{grid-template-columns:240px minmax(0,1fr)}
+  .stage.video{grid-column:2;border-right:0}
+  .stage.board{grid-column:1/-1;border-top:1px solid var(--line);min-height:360px}
+  .app{height:auto;min-height:100vh}
+  body{overflow:auto}
+}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand"><i></i>コートトレース</div>
+    <label class="btn file">動画を開く<input type="file" id="fileIn" accept="video/*"></label>
+    <form id="ytForm" style="display:contents"><input class="urlin" id="ytUrl" placeholder="YouTubeのURLを貼り付け" aria-label="YouTubeのURL">
+    <button class="btn" id="ytBtn" type="submit">YouTubeを開く</button></form>
+    <button class="btn" id="demoBtn">デモ映像で試す</button>
+    <span class="spacer"></span>
+    <label class="btn file">プロジェクト読込<input type="file" id="projIn" accept="application/json"></label>
+    <button class="btn" id="saveBtn">プロジェクト保存</button>
+    <button class="btn" id="pngBtn">ボードをPNG保存</button>
+  </header>
+
+  <main>
+    <aside>
+      <section>
+        <h3>名簿 <span class="hint">番号をクリックで編集</span></h3>
+        <div id="roster"></div>
+        <div class="actions">
+          <button class="btn sm" id="hideBtn" title="選択中のコマをこの時刻から非表示にする">画面外にする</button>
+          <button class="btn sm" id="delKfBtn">この時刻のKF削除</button>
+          <button class="btn sm danger" id="clearKfBtn">全KF削除</button>
+        </div>
+        <p class="note">動画上で選手の足元をクリック、またはボード上でコマをドラッグすると、その時刻のキーフレーム(KF)が入ります。KF同士の間は自動補間されます。</p>
+      </section>
+
+      <section>
+        <h3>AI検出アシスト</h3>
+        <div class="actions">
+          <button class="btn sm" id="detectBtn">この場面の人物を検出</button>
+          <button class="btn sm" id="autoTrackBtn">選択中の選手を自動追跡</button>
+          <button class="btn sm" id="stopTrackBtn" hidden>停止</button>
+        </div>
+        <p class="note" id="detNote">ブラウザ内の物体検出(COCO-SSD)で人物枠を出します。枠をクリックすると足元がKFになります。自動追跡は枠の連続性で追い、見失うと止まります。</p>
+      </section>
+
+      <section>
+        <h3>位置合わせ（カメラ補正）</h3>
+        <div class="actions">
+          <button class="btn sm" id="calibModeBtn">目印を置く</button>
+          <button class="btn sm" id="newCalibBtn" title="カメラが動いた時刻で新しい位置合わせを追加">この時刻で新規</button>
+          <button class="btn sm danger" id="delCalibBtn">削除</button>
+        </div>
+        <button class="btn" id="goTrackBtn" hidden style="margin:6px 0;width:100%">✓ 位置合わせOK → 追跡に進む</button>
+        <div class="field"><label>目印</label><select id="lmSel" style="width:160px"></select></div>
+        <div class="calib-pts" id="calibList"></div>
+        <p class="note" id="calibNote">コートの目印を4点以上、動画上でクリックしてください。合うと動画にコートの線が重なります。</p>
+      </section>
+
+      <section>
+        <h3>設定</h3>
+        <div class="field"><label>KFの空きが何秒超えたら非表示</label><input type="number" id="maxGap" min="0.5" max="30" step="0.5" value="3"></div>
+        <div class="field"><label>動画クリック後に進む秒数</label><input type="number" id="stepSec" min="0" max="5" step="0.1" value="0.5"></div>
+        <div class="field"><label>6分割 1本目 (ベースラインから m)</label><input type="number" id="split1" min="3" max="10" step="0.1" value="5.8"></div>
+        <div class="field"><label>6分割 2本目 (m)</label><input type="number" id="split2" min="6" max="14" step="0.1" value="9.8"></div>
+        <div class="field"><label>軌跡を表示</label><input type="checkbox" id="trails" checked></div>
+        <p class="note">ショートカット: <span class="kbd">Space</span> 再生 / <span class="kbd">←→</span> 1コマ / <span class="kbd">Shift+←→</span> 1秒 / <span class="kbd">Del</span> KF削除 / <span class="kbd">Ctrl+Z</span> 描画取消</p>
+      </section>
+    </aside>
+
+    <section class="stage video">
+      <div class="stage-h">
+        <span class="ttl">VIDEO</span>
+        <div class="seg">
+          <button class="btn sm on" data-vmode="track" id="vmTrack">追跡</button>
+          <button class="btn sm" data-vmode="calib" id="vmCalib">位置合わせ</button>
+        </div>
+        <label class="field" style="margin:0;gap:4px"><input type="checkbox" id="showProj" checked> コート線を重ねる</label>
+        <span class="modeinfo" id="vinfo">動画を開くか、デモ映像で試してください</span>
+      </div>
+      <div class="viewport" id="viewport">
+        <div class="empty" id="emptyMsg"><b>NO VIDEO</b><span>「動画を開く」で手元の試合映像を、<br>「YouTubeを開く」で共有されたURLの動画を読み込めます。<br>まずは「デモ映像で試す」で流れを確認できます。</span></div>
+        <canvas class="ov" id="ov"></canvas>
+      </div>
+      <div class="transport">
+        <button class="btn icon" id="playBtn">▶</button>
+        <button class="btn icon sm" id="b1s" title="1秒戻る">«</button>
+        <button class="btn icon sm" id="b1f" title="1コマ戻る">‹</button>
+        <button class="btn icon sm" id="f1f" title="1コマ進む">›</button>
+        <button class="btn icon sm" id="f1s" title="1秒進む">»</button>
+        <span class="tc" id="tc">0:00.00 / 0:00.00</span>
+        <input type="range" id="scrub" min="0" max="1000" value="0">
+        <select id="rate" class="btn sm"><option value="0.25">0.25x</option><option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="2">2x</option></select>
+      </div>
+    </section>
+
+    <section class="stage board">
+      <div class="stage-h">
+        <span class="ttl">BOARD</span>
+        <div class="seg" id="tools">
+          <button class="btn sm on" data-tool="select" title="コマを動かす / 選択中のコマを置く">移動</button>
+          <button class="btn sm" data-tool="pen">ペン</button>
+          <button class="btn sm" data-tool="line">直線</button>
+          <button class="btn sm" data-tool="arrow">矢印</button>
+          <button class="btn sm" data-tool="text">文字</button>
+          <button class="btn sm" data-tool="erase">消す</button>
+        </div>
+        <span id="colors" style="display:inline-flex;gap:5px;align-items:center"></span>
+        <select id="penW" class="btn sm"><option value="0.08">細</option><option value="0.14" selected>中</option><option value="0.24">太</option></select>
+        <button class="btn sm" id="undoBtn">取消</button>
+        <button class="btn sm" id="clearDrawBtn">描画クリア</button>
+        <select id="division" class="btn sm" title="コートの分割線">
+          <option value="none">分割線なし</option>
+          <option value="lanes3">オールコート3分割</option>
+          <option value="half2">ハーフコート2分割</option>
+          <option value="six">ハーフコート6分割</option>
+        </select>
+        <select id="offense" class="btn sm" title="人数チェックの対象チーム"><option value="A">OF: チームA</option><option value="B">OF: チームB</option></select>
+      </div>
+      <div class="boardwrap" id="boardwrap"><canvas id="board"></canvas></div>
+    </section>
+  </main>
+
+  <footer class="tl"><canvas id="tl"></canvas></footer>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+'use strict';
+// ───────────────────────── helpers
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const lerp = (a,b,u) => a + (b-a)*u;
+const uid = () => Math.random().toString(36).slice(2,9);
+const fmt = t => { if(!isFinite(t)) t = 0; const m = Math.floor(t/60), s = t - m*60; return m + ':' + s.toFixed(2).padStart(5,'0'); };
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let toastTimer;
+function toast(msg, ms=2800){ const el=$('#toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'), ms); }
+const FPS = 30;
+
+// ───────────────────────── court geometry (FIBA, meters)
+const C = { L:28, W:15, rimX:1.575, keyW:4.9, keyL:5.8, ftR:1.8, threeR:6.75, threeSide:0.9, threeStraight:2.99, ccR:1.8, raR:1.25, bbX:1.2, bbW:1.8, rimR:0.225 };
+function arc(cx,cy,r,a0,a1,n=32){ const p=[]; for(let i=0;i<=n;i++){ const a=a0+(a1-a0)*i/n; p.push([cx+r*Math.cos(a), cy+r*Math.sin(a)]); } return p; }
+function courtPaths(){
+  const P=[]; const yc=C.W/2;
+  P.push([[0,0],[C.L,0],[C.L,C.W],[0,C.W],[0,0]]);
+  P.push([[C.L/2,0],[C.L/2,C.W]]);
+  P.push(arc(C.L/2,yc,C.ccR,0,Math.PI*2,48));
+  for(const side of [0,1]){
+    const M = pts => pts.map(([x,y]) => [side ? C.L-x : x, y]);
+    const kw=C.keyW/2;
+    P.push(M([[0,yc-kw],[C.keyL,yc-kw],[C.keyL,yc+kw],[0,yc+kw]]));
+    P.push(M(arc(C.keyL,yc,C.ftR,0,Math.PI*2,40)));
+    const a0=Math.asin((yc-C.threeSide)/C.threeR);
+    P.push(M([[0,C.threeSide],[C.threeStraight,C.threeSide], ...arc(C.rimX,yc,C.threeR,-a0,a0,48), [C.threeStraight,C.W-C.threeSide],[0,C.W-C.threeSide]]));
+    P.push(M([[C.bbX,yc-C.raR], ...arc(C.rimX,yc,C.raR,-Math.PI/2,Math.PI/2,20), [C.bbX,yc+C.raR]]));
+    P.push(M(arc(C.rimX,yc,C.rimR,0,Math.PI*2,20)));
+    P.push(M([[C.bbX,yc-C.bbW/2],[C.bbX,yc+C.bbW/2]]));
+  }
+  return P;
+}
+const COURT_PATHS = courtPaths();
+const LANDMARKS = (() => {
+  const yc=C.W/2, kw=C.keyW/2, L=[];
+  const half = (side, s) => {
+    const mx = x => side ? C.L-x : x;
+    L.push({id:s+'c0', name:s+'コーナー（下）', x:mx(0), y:0});
+    L.push({id:s+'c1', name:s+'コーナー（上）', x:mx(0), y:C.W});
+    L.push({id:s+'k0', name:s+'ペイント角 ベースライン（下）', x:mx(0), y:yc-kw});
+    L.push({id:s+'k1', name:s+'ペイント角 ベースライン（上）', x:mx(0), y:yc+kw});
+    L.push({id:s+'f0', name:s+'FTライン端（下）', x:mx(C.keyL), y:yc-kw});
+    L.push({id:s+'f1', name:s+'FTライン端（上）', x:mx(C.keyL), y:yc+kw});
+    L.push({id:s+'fm', name:s+'FTライン中央', x:mx(C.keyL), y:yc});
+    L.push({id:s+'t0', name:s+'3Pライン 直線の端（下）', x:mx(C.threeStraight), y:C.threeSide});
+    L.push({id:s+'t1', name:s+'3Pライン 直線の端（上）', x:mx(C.threeStraight), y:C.W-C.threeSide});
+    L.push({id:s+'tt', name:s+'3Pアーク頂点', x:mx(C.rimX+C.threeR), y:yc});
+    L.push({id:s+'rim', name:s+'リング直下', x:mx(C.rimX), y:yc});
+  };
+  half(0,'左 ');
+  L.push({id:'h0', name:'ハーフライン端（下）', x:C.L/2, y:0});
+  L.push({id:'h1', name:'ハーフライン端（上）', x:C.L/2, y:C.W});
+  L.push({id:'cc', name:'センターサークル中心', x:C.L/2, y:yc});
+  L.push({id:'cb', name:'センターサークル 下端', x:C.L/2, y:yc-C.ccR});
+  L.push({id:'ct', name:'センターサークル 上端', x:C.L/2, y:yc+C.ccR});
+  half(1,'右 ');
+  return L;
+})();
+const LM = Object.fromEntries(LANDMARKS.map(l => [l.id,l]));
+
+// ───────────────────────── homography
+function solveLinear(A,b){
+  const n=b.length, M=A.map((r,i)=>[...r,b[i]]);
+  for(let c=0;c<n;c++){
+    let p=c; for(let r=c+1;r<n;r++) if(Math.abs(M[r][c])>Math.abs(M[p][c])) p=r;
+    if(Math.abs(M[p][c])<1e-12) return null; [M[c],M[p]]=[M[p],M[c]];
+    for(let r=0;r<n;r++){ if(r===c) continue; const f=M[r][c]/M[c][c]; if(!f) continue; for(let k=c;k<=n;k++) M[r][k]-=f*M[c][k]; }
+  }
+  return M.map((r,i)=>r[n]/r[i]);
+}
+function normalizePts(pts){
+  const n=pts.length; let mx=0,my=0; for(const p of pts){mx+=p[0];my+=p[1];} mx/=n; my/=n;
+  let d=0; for(const p of pts) d+=Math.hypot(p[0]-mx,p[1]-my); d/=n; const s=d>1e-9?Math.SQRT2/d:1;
+  return {T:[[s,0,-s*mx],[0,s,-s*my],[0,0,1]], pts:pts.map(p=>[(p[0]-mx)*s,(p[1]-my)*s])};
+}
+function mat3mul(A,B){ const R=[[0,0,0],[0,0,0],[0,0,0]]; for(let i=0;i<3;i++)for(let j=0;j<3;j++)for(let k=0;k<3;k++) R[i][j]+=A[i][k]*B[k][j]; return R; }
+function mat3inv(m){
+  const [a,b,c]=m[0],[d,e,f]=m[1],[g,h,i]=m[2];
+  const A=e*i-f*h, B=-(d*i-f*g), Cc=d*h-e*g; const det=a*A+b*B+c*Cc; if(Math.abs(det)<1e-14) return null;
+  return [[A/det,(c*h-b*i)/det,(b*f-c*e)/det],[B/det,(a*i-c*g)/det,(c*d-a*f)/det],[Cc/det,(b*g-a*h)/det,(a*e-b*d)/det]];
+}
+function computeHomography(src,dst){
+  if(src.length<4) return null;
+  const ns=normalizePts(src), nd=normalizePts(dst);
+  const AtA=Array.from({length:8},()=>new Array(8).fill(0)), Atb=new Array(8).fill(0);
+  const add=(row,rhs)=>{ for(let i=0;i<8;i++){ Atb[i]+=row[i]*rhs; for(let j=0;j<8;j++) AtA[i][j]+=row[i]*row[j]; } };
+  for(let i=0;i<src.length;i++){ const [u,v]=ns.pts[i],[x,y]=nd.pts[i]; add([u,v,1,0,0,0,-x*u,-x*v],x); add([0,0,0,u,v,1,-y*u,-y*v],y); }
+  const h=solveLinear(AtA,Atb); if(!h) return null;
+  const Hn=[[h[0],h[1],h[2]],[h[3],h[4],h[5]],[h[6],h[7],1]];
+  const Tdi=mat3inv(nd.T); if(!Tdi) return null;
+  return mat3mul(mat3mul(Tdi,Hn),ns.T);
+}
+function applyH(H,x,y){ const w=H[2][0]*x+H[2][1]*y+H[2][2]; if(Math.abs(w)<1e-9) return null; return [(H[0][0]*x+H[0][1]*y+H[0][2])/w,(H[1][0]*x+H[1][1]*y+H[1][2])/w,w]; }
+
+// ───────────────────────── state
+const S = {
+  project: null,
+  source: null,
+  selected: null,        // 'ball' | playerId
+  vmode: 'track',        // 'track' | 'calib'
+  tool: 'select',
+  penColor: '#f4f1ea', penWidth: 0.14,
+  lm: LANDMARKS[0].id,
+  detections: [],
+  undo: [],
+  drawing: null, drag: null, calibDrag: null,
+  tracking: false,
+};
+function newProject(){
+  return { version:1, name:'', teams:{A:{name:'チームA',color:'#d8443c'},B:{name:'チームB',color:'#2f6fd6'}},
+    players:[ ...['4','7','11','15','23'].map(n=>({id:'A'+n,team:'A',num:n,kfs:[]})), ...['3','8','12','20','33'].map(n=>({id:'B'+n,team:'B',num:n,kfs:[]})) ],
+    ball:{kfs:[]}, calibs:[], strokes:[],
+    settings:{maxGap:3, step:0.5, division:'none', offense:'A', trails:true, split1:5.8, split2:9.8, showProj:true} };
+}
+S.project = newProject();
+const P = () => S.project;
+const byId = id => P().players.find(p=>p.id===id);
+const entity = id => id==='ball' ? P().ball : byId(id);
+const now = () => S.source ? S.source.currentTime : 0;
+
+// ───────────────────────── keyframes & interpolation
+function setKf(kfs, kf){ const i=kfs.findIndex(k=>Math.abs(k.t-kf.t)<0.03); if(i>=0) kfs[i]=kf; else { kfs.push(kf); kfs.sort((a,b)=>a.t-b.t); } scheduleSave(); }
+function removeKfNear(kfs,t,tol=0.25){ let bi=-1,bd=tol; kfs.forEach((k,i)=>{ const d=Math.abs(k.t-t); if(d<bd){bd=d;bi=i;} }); if(bi>=0){ kfs.splice(bi,1); scheduleSave(); return true; } return false; }
+function sample(kfs,t,gapOf,posOf){
+  if(!kfs.length) return null;
+  if(t<kfs[0].t) return (kfs[0].v && kfs[0].t-t<=0.75) ? posOf(kfs[0],t) : null;
+  let i=kfs.length-1; while(i>0 && kfs[i].t>t) i--;
+  const a=kfs[i], b=kfs[i+1];
+  if(!a.v) return null;
+  if(!b || !b.v || b.t-a.t>gapOf(a)) return (t-a.t<=gapOf(a)) ? posOf(a,t) : null;
+  const pa=posOf(a,t), pb=posOf(b,t); if(!pa||!pb) return pa||pb;
+  const u=(t-a.t)/(b.t-a.t); return [lerp(pa[0],pb[0],u), lerp(pa[1],pb[1],u)];
+}
+const playerPos = (p,t) => sample(p.kfs,t,()=>P().settings.maxGap,k=>[k.x,k.y]);
+function ballPos(t){
+  return sample(P().ball.kfs,t, a=>a.holder?1e9:P().settings.maxGap, (k,tt)=>{ if(k.holder){ const p=byId(k.holder); const pp=p&&playerPos(p,tt); if(pp) return pp; } return (k.x!=null)?[k.x,k.y]:null; });
+}
+function entityPos(id,t){ return id==='ball' ? ballPos(t) : playerPos(byId(id),t); }
+
+// ───────────────────────── calibration
+function calibAt(t){ const cs=P().calibs; if(!cs.length) return null; let c=cs[0]; for(const k of cs) if(k.t<=t+1e-6) c=k; return c; }
+function recomputeCalib(c){
+  const ids=Object.keys(c.pts); const src=[],dst=[];
+  for(const id of ids){ const l=LM[id]; if(!l) continue; src.push(c.pts[id]); dst.push([l.x,l.y]); }
+  c.H = src.length>=4 ? computeHomography(src,dst) : null;
+  c.Hi = c.H ? mat3inv(c.H) : null;
+  if(c.H){ // reprojection error in normalized image units
+    let e=0; for(let i=0;i<src.length;i++){ const q=applyH(c.Hi,dst[i][0],dst[i][1]); if(q) e+=Math.hypot(q[0]-src[i][0],q[1]-src[i][1]); } c.err=e/src.length;
+  } else c.err=null;
+}
+function imgToCourt(u,v,t){ const c=calibAt(t); if(!c||!c.H) return null; const r=applyH(c.H,u,v); return r?[r[0],r[1]]:null; }
+function courtToImg(x,y,t){ const c=calibAt(t); if(!c||!c.Hi) return null; const r=applyH(c.Hi,x,y); return (r&&r[2]>0)?[r[0],r[1]]:null; }
+function ensureCalib(t){ let c=calibAt(t); if(!c){ c={id:uid(),t:0,pts:{},H:null,Hi:null}; P().calibs.push(c); } return c; }
+
+// ───────────────────────── media sources
+class VideoSource{
+  constructor(file){ this.kind='video'; this.name=file.name; this.el=document.createElement('video'); this.el.playsInline=true; this.el.preload='auto'; this.el.src=URL.createObjectURL(file); }
+  get duration(){ return isFinite(this.el.duration)?this.el.duration:0; }
+  get currentTime(){ return this.el.currentTime; } set currentTime(v){ this.el.currentTime=clamp(v,0,this.duration||v); }
+  get paused(){ return this.el.paused; } play(){ return this.el.play().catch(()=>{}); } pause(){ this.el.pause(); }
+  get width(){ return this.el.videoWidth||16; } get height(){ return this.el.videoHeight||9; }
+  set rate(r){ this.el.playbackRate=r; }
+  seekAsync(t){ return new Promise(res=>{ const on=()=>{ this.el.removeEventListener('seeked',on); res(); }; this.el.addEventListener('seeked',on); this.el.currentTime=t; }); }
+  tick(){}
+  destroy(){ this.el.pause(); URL.revokeObjectURL(this.el.src); this.el.remove(); }
+}
+// Synthetic demo clip rendered live (no file needed); doubles as a check of the calibration math.
+const DEMO = (() => {
+  const script = {
+    A4:[{t:0,x:22,y:7.5},{t:3.5,x:11,y:7.5},{t:6,x:9,y:5},{t:7,x:9,y:5},{t:9,x:4,y:9.5},{t:12,x:4,y:9.5}],
+    A7:[{t:0,x:16,y:13},{t:3,x:9,y:12.5},{t:6,x:9,y:12.5},{t:8,x:3.2,y:10.5},{t:10,x:2.5,y:13.5},{t:12,x:2.5,y:13.5}],
+    A11:[{t:0,x:15,y:3},{t:3,x:8.5,y:3},{t:6,x:5,y:1.6},{t:8.5,x:5,y:1.6},{t:10.5,x:2.6,y:5.6},{t:12,x:2.6,y:5.6}],
+    A15:[{t:0,x:12,y:9},{t:3,x:4,y:9.6},{t:5,x:4,y:9.6},{t:7,x:6,y:7.5},{t:9,x:6,y:7.5},{t:11,x:3,y:8.5},{t:12,x:3,y:8.5}],
+    A23:[{t:0,x:12,y:5},{t:3,x:3.5,y:5.2},{t:6.5,x:3.5,y:5.2},{t:8,x:7,y:11},{t:12,x:7,y:11}],
+  };
+  for(const k in script) script[k].forEach(kf=>kf.v=true);
+  const ball=[{t:0,holder:'A4',v:true},{t:7,holder:'A4',v:true},{t:7.6,holder:'A11',v:true},{t:12,holder:'A11',v:true}];
+  const defMap={A4:'B3',A7:'B8',A11:'B12',A15:'B20',A23:'B33'};
+  const W=960,H=540;
+  const Hc=computeHomography([[0,0],[C.L,0],[C.L,C.W],[0,C.W]], [[60,505],[900,505],[720,170],[240,170]]);
+  const proj=(x,y)=>{ const r=applyH(Hc,x,y); return [r[0],r[1]]; };
+  const offPos=(id,t)=>sample(script[id],t,()=>99,k=>[k.x,k.y]);
+  const defPos=(id,t)=>{ const o=offPos(id,Math.max(0,t-0.25)); if(!o) return null; const dx=C.rimX-o[0], dy=C.W/2-o[1]; const d=Math.hypot(dx,dy)||1; const m=Math.min(1.6,Math.max(0,d-0.8)); return [o[0]+dx/d*m,o[1]+dy/d*m]; };
+  const ballAt=t=>sample(ball,t,()=>99,(k,tt)=>offPos(k.holder,tt));
+  return {script,ball,defMap,W,H,Hc,proj,offPos,defPos,ballAt,duration:12};
+})();
+class DemoSource{
+  constructor(){ this.kind='demo'; this.name='demo-clip'; this.el=document.createElement('canvas'); this.el.className='media'; this.el.width=DEMO.W; this.el.height=DEMO.H; this._t=0; this.playing=false; this.rate=1; this.render(); }
+  get duration(){ return DEMO.duration; } get width(){ return DEMO.W; } get height(){ return DEMO.H; }
+  get currentTime(){ return this._t; } set currentTime(v){ this._t=clamp(v,0,DEMO.duration); this.render(); }
+  get paused(){ return !this.playing; } play(){ if(this._t>=DEMO.duration-0.01) this._t=0; this.playing=true; } pause(){ this.playing=false; }
+  seekAsync(t){ this.currentTime=t; return Promise.resolve(); }
+  tick(dt){ if(!this.playing) return; this._t+=dt*this.rate; if(this._t>=DEMO.duration){ this._t=DEMO.duration; this.playing=false; } this.render(); }
+  destroy(){ this.el.remove(); }
+  render(){
+    const g=this.el.getContext('2d'), t=this._t; g.fillStyle='#1b1d24'; g.fillRect(0,0,DEMO.W,DEMO.H);
+    g.fillStyle='#2a2d36'; g.fillRect(0,0,DEMO.W,170);
+    const poly=[[0,0],[C.L,0],[C.L,C.W],[0,C.W]].map(p=>DEMO.proj(...p));
+    g.beginPath(); poly.forEach((p,i)=>i?g.lineTo(...p):g.moveTo(...p)); g.closePath(); g.fillStyle='#c39a5e'; g.fill();
+    g.strokeStyle='rgba(255,255,255,.9)'; g.lineWidth=2; g.lineJoin='round';
+    for(const path of COURT_PATHS){ g.beginPath(); path.forEach((p,i)=>{ const q=DEMO.proj(...p); i?g.lineTo(...q):g.moveTo(...q); }); g.stroke(); }
+    const drawP=(pos,color,num)=>{ const q=DEMO.proj(...pos), q2=DEMO.proj(pos[0]+0.5,pos[1]); const r=Math.hypot(q2[0]-q[0],q2[1]-q[1]);
+      g.fillStyle='rgba(0,0,0,.35)'; g.beginPath(); g.ellipse(q[0],q[1],r*1.1,r*0.45,0,0,Math.PI*2); g.fill();
+      g.fillStyle=color; g.fillRect(q[0]-r*0.7,q[1]-r*3.2,r*1.4,r*2.6); g.beginPath(); g.arc(q[0],q[1]-r*3.6,r*0.55,0,Math.PI*2); g.fillStyle='#e9c9a6'; g.fill();
+      g.fillStyle='#fff'; g.font=`bold ${Math.max(9,r*1.5)}px "Barlow Condensed",sans-serif`; g.textAlign='center'; g.textBaseline='middle'; g.fillText(num,q[0],q[1]-r*1.9); };
+    const order=Object.keys(DEMO.script).map(id=>({id,o:DEMO.offPos(id,t),d:DEMO.defPos(id,t)})).sort((a,b)=>a.o[1]-b.o[1]).reverse();
+    for(const e of order){ drawP(e.d,'#2f6fd6',DEMO.defMap[e.id].slice(1)); drawP(e.o,'#d8443c',e.id.slice(1)); }
+    const b=DEMO.ballAt(t); if(b){ const q=DEMO.proj(b[0]+0.6,b[1]); g.fillStyle='#e8862e'; g.beginPath(); g.arc(q[0],q[1]-6,6,0,Math.PI*2); g.fill(); }
+    g.fillStyle='rgba(255,255,255,.55)'; g.font='12px "IBM Plex Mono",monospace'; g.textAlign='left'; g.fillText('DEMO CLIP  '+t.toFixed(2)+'s',12,20);
+  }
+}
+
+// ───────────────────────── YouTube source (IFrame Player API)
+let ytApi=null;
+function loadYT(){
+  if(window.YT&&window.YT.Player) return Promise.resolve();
+  if(ytApi) return ytApi;
+  ytApi=new Promise((res,rej)=>{ window.onYouTubeIframeAPIReady=()=>res(); loadScript('https://www.youtube.com/iframe_api').catch(rej); setTimeout(()=>rej(new Error('timeout')),12000); }).catch(e=>{ ytApi=null; throw e; });
+  return ytApi;
+}
+function parseYouTube(str){
+  const s=(str||'').trim(); if(/^[\w-]{11}$/.test(s)) return {id:s,t:0};
+  try{ const u=new URL(s); let id=null;
+    if(/(^|\.)youtu\.be$/.test(u.hostname)) id=u.pathname.slice(1).split('/')[0];
+    else if(/(^|\.)youtube(-nocookie)?\.com$/.test(u.hostname)){ id=u.searchParams.get('v'); if(!id){ const m=u.pathname.match(/\/(shorts|live|embed|v)\/([\w-]{11})/); if(m) id=m[2]; } }
+    if(!id||!/^[\w-]{11}$/.test(id)) return null;
+    let t=0; const ts=u.searchParams.get('t')||u.searchParams.get('start')||(u.hash.match(/t=([^&]+)/)||[])[1];
+    if(ts){ const m=String(ts).match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s?)?$/); t=m?(+(m[1]||0)*3600+ +(m[2]||0)*60+ +(m[3]||0)):(parseFloat(ts)||0); }
+    return {id,t};
+  }catch(e){ return null; }
+}
+class YouTubeSource{
+  constructor(id,startT){
+    this.kind='youtube'; this.id=id; this.name='YouTube '+id; this.key='yt:'+id;
+    this.el=document.createElement('div'); this.el.className='ytwrap'; const inner=document.createElement('div'); this.el.appendChild(inner);
+    this._last=startT||0; this._stamp=performance.now(); this._pollAt=0; this._dur=0; this._rate=1; this.playing=false; this.ready=false;
+    const vars={controls:0,rel:0,modestbranding:1,playsinline:1,disablekb:1,fs:0,iv_load_policy:3,start:Math.floor(startT||0)};
+    if(/^https?:/.test(location.origin)) vars.origin=location.origin;
+    this.player=new YT.Player(inner,{videoId:id,width:'100%',height:'100%',playerVars:vars,events:{
+      onReady:()=>{ this.ready=true; this._dur=this.player.getDuration()||0; this.rate=this._rate; if(this.onready) this.onready(); },
+      onStateChange:e=>{ this.playing=(e.data===1); const v=this.player.getCurrentTime(); if(typeof v==='number'){ this._last=v; this._stamp=performance.now(); } if(e.data===0) this.playing=false; },
+      onError:e=>{ const code=e.data; if(code===153||code===5){ unmount(); showEmpty('YOUTUBE BLOCKED', ytBlockedHelp(code)); return; } const msg={2:'URLが正しくありません。動画ページのURLをそのまま貼ってください',100:'動画が見つかりません（削除済みか非公開）',101:'この動画は埋め込みが許可されていません。動画の所有者が「埋め込みを許可」にする必要があります',150:'この動画は埋め込みが許可されていません。動画の所有者が「埋め込みを許可」にする必要があります'}[code]||('コード '+code); unmount(); showEmpty('YOUTUBE ERROR', msg); }
+    }});
+  }
+  get duration(){ if(this.ready){ const d=this.player.getDuration(); if(d) this._dur=d; } return this._dur; }
+  get currentTime(){ if(this.playing) return clamp(this._last+(performance.now()-this._stamp)/1000*this._rate,0,this._dur||1e9); return this._last; }
+  set currentTime(v){ v=clamp(v,0,this._dur||v); this._last=v; this._stamp=performance.now(); if(this.ready) this.player.seekTo(v,true); }
+  get paused(){ return !this.playing; }
+  play(){ if(this.ready) this.player.playVideo(); } pause(){ if(this.ready) this.player.pauseVideo(); }
+  get width(){ return 1280; } get height(){ return 720; }
+  set rate(r){ this._rate=r; if(this.ready){ const av=this.player.getAvailablePlaybackRates()||[1]; const best=av.reduce((a,b)=>Math.abs(b-r)<Math.abs(a-r)?b:a,av[0]); this.player.setPlaybackRate(best); this._rate=best; } }
+  seekAsync(t){ this.currentTime=t; return new Promise(r=>setTimeout(r,350)); }
+  tick(){ if(!this.ready||!this.playing) return; const n=performance.now(); if(n-this._pollAt<250) return; this._pollAt=n; const v=this.player.getCurrentTime(); if(typeof v!=='number') return; const est=this._last+(n-this._stamp)/1000*this._rate; if(Math.abs(v-est)>0.15){ this._last=v; this._stamp=n; } }
+  destroy(){ try{ this.player.destroy(); }catch(e){} this.el.remove(); }
+}
+function showEmpty(title,html){ emptyMsg.innerHTML='<b>'+title+'</b><div class="lines">'+html+'</div>'; emptyMsg.hidden=false; }
+function ytBlockedHelp(code){
+  const isFile=location.protocol==='file:';
+  const head = isFile ? 'ファイルを直接開いている（file://）ため、YouTubeが埋め込みを拒否しています。' : 'この表示環境ではYouTubeの埋め込みがブロックされています（claude.ai上の表示など）。';
+  return head+'<br><br>対処: <b>index.html と start.bat を同じフォルダに置き、start.bat をダブルクリック</b>してください。ブラウザで http://localhost:8765/ が開き、そこでURLを貼れば再生できます。<br><br>埋め込みコードは不要です。通常の動画URL（https://www.youtube.com/watch?v=… や https://youtu.be/…）で大丈夫です。'+(code?'<br><small>エラーコード '+code+'</small>':'');
+}
+function unmount(){ if(S.source){ S.source.destroy(); S.source=null; } $('#vinfo').textContent='動画を開くか、デモ映像で試してください'; }
+async function openYouTube(id,startT,keepProject){
+  try{ toast('YouTubeプレイヤーを読み込み中…'); await loadYT(); }catch(e){ showEmpty('YOUTUBE BLOCKED', ytBlockedHelp()); return; }
+  if(!keepProject){ S.project=newProject(); S.project.name='youtube_'+id; }
+  const src=new YouTubeSource(id,startT);
+  src.onready=()=>{ resizeAll(); if(!keepProject) loadAutosave(src.key); renderRoster(); };
+  mount(src); renderRoster(); renderCalibList(); applySettingsUI();
+}
+function openYouTubeFromInput(){ const r=parseYouTube($('#ytUrl').value); if(!r) return toast('YouTubeのURLとして読めませんでした（例: https://www.youtube.com/watch?v=XXXXXXXXXXX）',5000); openYouTube(r.id,r.t,false); }
+
+// ───────────────────────── mounting media
+const viewport=$('#viewport'), ov=$('#ov'), emptyMsg=$('#emptyMsg');
+function mount(src){
+  if(S.source) S.source.destroy();
+  S.source=src; S.detections=[]; stopTracking();
+  if(!src.key) src.key=src.name;
+  P().source = src.kind==='youtube' ? {type:'youtube',id:src.id} : src.kind==='video' ? {type:'file',name:src.name} : {type:'demo'};
+  viewport.insertBefore(src.el, ov); emptyMsg.hidden=true;
+  src.rate=parseFloat($('#rate').value);
+  $('#vinfo').textContent = src.kind==='demo' ? 'デモ映像（合成）' : src.kind==='youtube' ? 'YouTube: '+src.id+'（AI検出は使えません）' : src.name;
+  if(src.kind==='video'){ src.el.addEventListener('loadedmetadata',()=>{ resizeAll(); loadAutosave(src.key); }); src.el.addEventListener('ended',()=>updatePlayBtn()); }
+  resizeAll(); updatePlayBtn();
+}
+$('#fileIn').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; S.project=newProject(); S.project.name=f.name; mount(new VideoSource(f)); renderRoster(); renderCalibList(); e.target.value=''; });
+$('#ytForm').addEventListener('submit',e=>{ e.preventDefault(); openYouTubeFromInput(); });
+$('#demoBtn').addEventListener('click', ()=>{
+  S.project=newProject(); S.project.name='demo';
+  const pr=S.project;
+  for(const id of ['A4','A7','A11']){ byId(id).kfs=DEMO.script[id].map(k=>({...k})); }
+  pr.ball.kfs=DEMO.ball.map(k=>({...k}));
+  const c={id:uid(),t:0,pts:{}};
+  for(const id of ['左 c0','左 c1','右 c0','右 c1','左 f0','左 f1','左 tt','cc']){ const l=LM[id]; const q=DEMO.proj(l.x,l.y); c.pts[id]=[q[0]/DEMO.W,q[1]/DEMO.H]; }
+  recomputeCalib(c); pr.calibs=[c];
+  pr.strokes=[{type:'text',pts:[[19,13.2]],color:'#f4f1ea',width:0.14,text:'例: 4→11 コーナーへパス'}];
+  S.selected='A15';
+  mount(new DemoSource()); renderRoster(); renderCalibList(); applySettingsUI();
+  toast('デモ: 4・7・11番とボールは入力済み。15番を選択中なので、動画の15番の足元をクリックしてみてください。',6000);
+});
+
+// ───────────────────────── playback
+function updatePlayBtn(){ $('#playBtn').textContent = (S.source && !S.source.paused) ? '❚❚' : '▶'; }
+function togglePlay(){ if(!S.source) return; if(S.source.paused) S.source.play(); else S.source.pause(); updatePlayBtn(); }
+function seek(t){ if(!S.source) return; S.source.currentTime=clamp(t,0,S.source.duration||0); }
+$('#playBtn').addEventListener('click',togglePlay);
+$('#b1s').addEventListener('click',()=>seek(now()-1)); $('#f1s').addEventListener('click',()=>seek(now()+1));
+$('#b1f').addEventListener('click',()=>seek(now()-1/FPS)); $('#f1f').addEventListener('click',()=>seek(now()+1/FPS));
+$('#rate').addEventListener('change',e=>{ if(S.source) S.source.rate=parseFloat(e.target.value); });
+const scrub=$('#scrub'); let scrubbing=false;
+scrub.addEventListener('input',()=>{ scrubbing=true; if(S.source) seek(scrub.value/1000*S.source.duration); });
+scrub.addEventListener('change',()=>scrubbing=false);
+
+// ───────────────────────── geometry of viewport / board
+function mediaRect(){ const vw=viewport.clientWidth, vh=viewport.clientHeight; const sw=S.source?S.source.width:16, sh=S.source?S.source.height:9; const s=Math.min(vw/sw,vh/sh); const w=sw*s,h=sh*s; return {x:(vw-w)/2,y:(vh-h)/2,w,h}; }
+const board=$('#board'), boardwrap=$('#boardwrap'), tl=$('#tl');
+let BG={s:20,ox:0,oy:0};
+function boardGeom(){ const w=boardwrap.clientWidth, h=boardwrap.clientHeight; const m=1.2; const s=Math.min(w/(C.L+2*m), h/(C.W+2*m)); BG={s, ox:(w-C.L*s)/2, oy:(h-C.W*s)/2, w, h}; }
+const toPx=(x,y)=>[BG.ox+x*BG.s, BG.oy+(C.W-y)*BG.s];
+const fromPx=(px,py)=>[(px-BG.ox)/BG.s, C.W-(py-BG.oy)/BG.s];
+function fitCanvas(cv,w,h){ const d=window.devicePixelRatio||1; if(cv.width!==Math.round(w*d)||cv.height!==Math.round(h*d)){ cv.width=Math.round(w*d); cv.height=Math.round(h*d); } cv.style.width=w+'px'; cv.style.height=h+'px'; const g=cv.getContext('2d'); g.setTransform(d,0,0,d,0,0); return g; }
+function resizeAll(){ boardGeom(); if(S.source&&S.source.kind==='youtube'){ const r=mediaRect(); Object.assign(S.source.el.style,{left:r.x+'px',top:r.y+'px',width:r.w+'px',height:r.h+'px'}); } }
+new ResizeObserver(resizeAll).observe(boardwrap);
+new ResizeObserver(resizeAll).observe(viewport);
+
+// ───────────────────────── zones / divisions
+function zoneOf(x,y){
+  const div=P().settings.division, st=P().settings;
+  if(div==='lanes3') return 'L'+(y<5?1:y<10?2:3);
+  if(div==='half2') return 'H'+(x<C.L/2?'L':'R')+(y<C.W/2?'d':'u');
+  if(div==='six'){ const side=x<C.L/2?'L':'R'; const d=side==='L'?x:C.L-x; if(d>C.L/2) return null; const row=d<st.split1?'base':d<st.split2?'wing':'top'; if(row==='base' && Math.abs(y-C.W/2)<C.keyW/2) return null; return 'S'+side+row+(y<C.W/2?'d':'u'); }
+  return null;
+}
+const ZONE_LIMIT={lanes3:3,half2:3,six:1};
+
+// ───────────────────────── board drawing
+function drawBoard(){
+  const g=fitCanvas(board,boardwrap.clientWidth,boardwrap.clientHeight); boardGeom();
+  const t=now(), st=P().settings; const s=BG.s;
+  g.clearRect(0,0,BG.w,BG.h);
+  const court=cssVar('--court'), lineC=cssVar('--court-line'), paint=cssVar('--paint'), ink=cssVar('--ink'), accent=cssVar('--accent');
+  // floor
+  g.fillStyle=cssVar('--court-edge'); const [fx,fy]=toPx(-1,C.W+1); g.fillRect(fx,fy,(C.L+2)*s,(C.W+2)*s);
+  g.fillStyle=court; const [cx0,cy0]=toPx(0,C.W); g.fillRect(cx0,cy0,C.L*s,C.W*s);
+  g.fillStyle=paint; for(const side of [0,1]){ const x0=side?C.L-C.keyL:0; const [px,py]=toPx(x0,C.W/2+C.keyW/2); g.fillRect(px,py,C.keyL*s,C.keyW*s); }
+  // lines
+  g.strokeStyle=lineC; g.lineWidth=Math.max(1.5,0.05*s); g.lineJoin='round'; g.lineCap='round';
+  for(const path of COURT_PATHS){ g.beginPath(); path.forEach((p,i)=>{ const q=toPx(...p); i?g.lineTo(...q):g.moveTo(...q); }); g.stroke(); }
+  // divisions
+  drawDivisions(g,t);
+  // trails
+  if(st.trails){ for(const p of P().players){ if(!playerPos(p,t)) continue; g.beginPath(); let started=false; for(let tt=t-2.5;tt<=t;tt+=0.1){ const q=playerPos(p,tt); if(!q){started=false;continue;} const px=toPx(...q); started?g.lineTo(...px):g.moveTo(...px); started=true; } g.strokeStyle=P().teams[p.team].color+'88'; g.lineWidth=Math.max(1.5,0.08*s); g.stroke(); } }
+  // landmarks while calibrating
+  if(S.vmode==='calib'){ const c=calibAt(t); for(const l of LANDMARKS){ const [px,py]=toPx(l.x,l.y); const placed=c&&c.pts[l.id]; const cur=l.id===S.lm; g.beginPath(); g.arc(px,py,cur?7:4,0,Math.PI*2); g.fillStyle=cur?accent:(placed?cssVar('--ok'):'rgba(0,0,0,.35)'); g.fill(); if(cur){ g.strokeStyle='#fff'; g.lineWidth=2; g.stroke(); } } }
+  // pieces
+  const R=0.55*s;
+  for(const p of P().players){ const q=playerPos(p,t); if(!q) continue; const [px,py]=toPx(...q); const col=P().teams[p.team].color;
+    g.beginPath(); g.arc(px+R*0.12,py+R*0.18,R,0,Math.PI*2); g.fillStyle='rgba(0,0,0,.28)'; g.fill();
+    g.beginPath(); g.arc(px,py,R,0,Math.PI*2); g.fillStyle=col; g.fill(); g.lineWidth=Math.max(1.5,R*0.14); g.strokeStyle= S.selected===p.id ? '#fff' : 'rgba(255,255,255,.75)'; g.stroke();
+    if(S.selected===p.id){ g.beginPath(); g.arc(px,py,R+Math.max(3,R*0.3),0,Math.PI*2); g.strokeStyle=cssVar('--sel'); g.lineWidth=2; g.stroke(); }
+    g.fillStyle='#fff'; g.font=`700 ${R*1.35}px "Barlow Condensed",sans-serif`; g.textAlign='center'; g.textBaseline='middle'; g.fillText(p.num,px,py+R*0.05);
+  }
+  const b=ballPos(t); if(b){ const [px,py]=toPx(...b); const r=0.3*s; g.beginPath(); g.arc(px+r*0.15,py+r*0.2,r,0,Math.PI*2); g.fillStyle='rgba(0,0,0,.3)'; g.fill(); g.beginPath(); g.arc(px,py,r,0,Math.PI*2); g.fillStyle=cssVar('--ball'); g.fill(); g.strokeStyle='#5a2c0a'; g.lineWidth=Math.max(1,r*0.12); g.stroke(); g.beginPath(); g.moveTo(px-r,py); g.lineTo(px+r,py); g.moveTo(px,py-r); g.lineTo(px,py+r); g.stroke(); if(S.selected==='ball'){ g.beginPath(); g.arc(px,py,r+4,0,Math.PI*2); g.strokeStyle=cssVar('--sel'); g.lineWidth=2; g.stroke(); } }
+  // strokes
+  for(const sk of P().strokes) drawStroke(g,sk);
+  if(S.drawing) drawStroke(g,S.drawing);
+}
+function drawStroke(g,sk){
+  g.strokeStyle=sk.color; g.fillStyle=sk.color; g.lineWidth=Math.max(1.5,sk.width*BG.s); g.lineCap='round'; g.lineJoin='round';
+  if(sk.type==='text'){ const [px,py]=toPx(...sk.pts[0]); g.font=`500 ${Math.max(11,0.55*BG.s)}px "Noto Sans JP",sans-serif`; g.textAlign='left'; g.textBaseline='middle'; g.lineWidth=Math.max(2,0.12*BG.s); g.strokeStyle='rgba(0,0,0,.55)'; g.strokeText(sk.text,px,py); g.fillText(sk.text,px,py); return; }
+  if(sk.pts.length<2) return;
+  g.beginPath(); sk.pts.forEach((p,i)=>{ const q=toPx(...p); i?g.lineTo(...q):g.moveTo(...q); }); g.stroke();
+  if(sk.type==='arrow'){ const a=toPx(...sk.pts[sk.pts.length-2]), b=toPx(...sk.pts[sk.pts.length-1]); const ang=Math.atan2(b[1]-a[1],b[0]-a[0]); const hl=Math.max(8,0.45*BG.s); g.beginPath(); g.moveTo(...b); g.lineTo(b[0]-hl*Math.cos(ang-0.5),b[1]-hl*Math.sin(ang-0.5)); g.lineTo(b[0]-hl*Math.cos(ang+0.5),b[1]-hl*Math.sin(ang+0.5)); g.closePath(); g.fill(); }
+}
+function drawDivisions(g,t){
+  const st=P().settings, div=st.division; if(div==='none') return;
+  const s=BG.s; const accent=cssVar('--accent');
+  g.save(); g.setLineDash([Math.max(4,0.3*s),Math.max(4,0.25*s)]); g.strokeStyle='rgba(20,10,0,.6)'; g.lineWidth=Math.max(1.5,0.07*s);
+  const line=(x0,y0,x1,y1)=>{ g.beginPath(); g.moveTo(...toPx(x0,y0)); g.lineTo(...toPx(x1,y1)); g.stroke(); };
+  const label=(x,y,txt)=>{ const [px,py]=toPx(x,y); g.save(); g.setLineDash([]); g.font=`600 ${Math.max(10,0.5*s)}px "Barlow Condensed",sans-serif`; g.textAlign='center'; g.textBaseline='middle'; g.fillStyle='rgba(30,15,0,.55)'; g.fillText(txt,px,py); g.restore(); };
+  if(div==='lanes3'){ line(0,5,C.L,5); line(0,10,C.L,10); label(C.L/2,2.5,'レーン 1'); label(C.L/2,7.5,'レーン 2'); label(C.L/2,12.5,'レーン 3'); }
+  if(div==='half2'){ line(0,C.W/2,C.L,C.W/2); for(const side of [0,1]){ const x=side?C.L-9:9; label(x,3.3,'スペース 2'); label(x,11.7,'スペース 1'); } }
+  if(div==='six'){
+    line(0,C.W/2,C.L,C.W/2);
+    for(const side of [0,1]){ const mx=x=>side?C.L-x:x; line(mx(st.split1),0,mx(st.split1),C.W); line(mx(st.split2),0,mx(st.split2),C.W);
+      const r1=(st.split1)/2, r2=(st.split1+st.split2)/2, r3=(st.split2+C.L/2)/2;
+      label(mx(r1),2.2,'コーナー'); label(mx(r1),C.W-2.2,'コーナー'); label(mx(r2),3.6,'ウイング'); label(mx(r2),C.W-3.6,'ウイング'); label(mx(r3),3.6,'トップ'); label(mx(r3),C.W-3.6,'トップ');
+      // paint belongs to no zone
+      g.save(); g.setLineDash([]); const [px,py]=toPx(mx(0),C.W/2+C.keyW/2); g.fillStyle='rgba(0,0,0,.08)'; const w=Math.min(st.split1,C.keyL)*s; g.fillRect(side?px-w:px,py,w,C.keyW*s); g.restore();
+    }
+  }
+  g.restore();
+  // occupancy per zone for the offense team
+  const counts={}, cent={};
+  for(const p of P().players){ if(p.team!==st.offense) continue; const q=playerPos(p,t); if(!q) continue; const z=zoneOf(...q); if(!z) continue; counts[z]=(counts[z]||0)+1; (cent[z]=cent[z]||[]).push(q); }
+  const lim=ZONE_LIMIT[div];
+  for(const z in counts){ const pts=cent[z]; const cx=pts.reduce((a,p)=>a+p[0],0)/pts.length, cy=pts.reduce((a,p)=>a+p[1],0)/pts.length; const [px,py]=toPx(cx,cy-1.1); const over=counts[z]>lim; g.beginPath(); g.roundRect(px-16,py-9,32,18,9); g.fillStyle=over?cssVar('--bad'):'rgba(255,255,255,.85)'; g.fill(); g.fillStyle=over?'#fff':'#3a2a10'; g.font='600 12px "Barlow Condensed",sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(counts[z]+'/'+lim,px,py+0.5); }
+}
+
+// ───────────────────────── video overlay drawing
+function drawOverlay(){
+  const g=fitCanvas(ov,viewport.clientWidth,viewport.clientHeight); g.clearRect(0,0,viewport.clientWidth,viewport.clientHeight);
+  if(!S.source) return; const r=mediaRect(), t=now(); const I=(u,v)=>[r.x+u*r.w, r.y+v*r.h];
+  const c=calibAt(t);
+  if(c&&c.Hi&&P().settings.showProj){ g.strokeStyle= S.vmode==='calib' ? 'rgba(80,220,120,.9)' : 'rgba(255,255,255,.35)'; g.lineWidth=1.5; g.lineJoin='round';
+    for(const path of COURT_PATHS){ g.beginPath(); let pen=false; for(const p of path){ const q=applyH(c.Hi,p[0],p[1]); if(!q||q[2]<=0||Math.abs(q[0])>3||Math.abs(q[1])>3){pen=false;continue;} const px=I(q[0],q[1]); pen?g.lineTo(...px):g.moveTo(...px); pen=true; } g.stroke(); } }
+  if(S.vmode==='calib'){
+    if(c) for(const id in c.pts){ const [px,py]=I(...c.pts[id]); const cur=id===S.lm; g.beginPath(); g.arc(px,py,cur?7:5,0,Math.PI*2); g.fillStyle=cur?'#e8b04a':'#4fd07a'; g.fill(); g.strokeStyle='#000'; g.lineWidth=1.5; g.stroke(); g.fillStyle='#fff'; g.font='11px "Noto Sans JP",sans-serif'; g.textAlign='left'; g.shadowColor='#000'; g.shadowBlur=3; g.fillText(LM[id].name,px+9,py-8); g.shadowBlur=0; }
+    return;
+  }
+  // detections
+  for(const d of S.detections){ const [x,y]=I(d.u,d.v); const w=d.w*r.w, h=d.h*r.h; g.strokeStyle='rgba(255,215,80,.9)'; g.lineWidth=1.5; g.strokeRect(x,y,w,h); g.beginPath(); g.arc(x+w/2,y+h,4,0,Math.PI*2); g.fillStyle='rgba(255,215,80,.95)'; g.fill(); }
+  // pieces reprojected into the video
+  if(c&&c.Hi){ for(const p of P().players){ const q=playerPos(p,t); if(!q) continue; const im=applyH(c.Hi,q[0],q[1]); if(!im||im[2]<=0) continue; const [px,py]=I(im[0],im[1]); const col=P().teams[p.team].color; g.beginPath(); g.arc(px,py,S.selected===p.id?9:7,0,Math.PI*2); g.fillStyle=col; g.globalAlpha=.85; g.fill(); g.globalAlpha=1; g.strokeStyle='#fff'; g.lineWidth=S.selected===p.id?2.5:1.2; g.stroke(); g.fillStyle='#fff'; g.font='700 10px "Barlow Condensed",sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(p.num,px,py+0.5); }
+    const b=ballPos(t); if(b){ const im=applyH(c.Hi,b[0],b[1]); if(im&&im[2]>0){ const [px,py]=I(im[0],im[1]); g.beginPath(); g.arc(px,py-8,4.5,0,Math.PI*2); g.fillStyle='#e8862e'; g.fill(); g.strokeStyle='#fff'; g.lineWidth=1; g.stroke(); } } }
+}
+
+// ───────────────────────── timeline
+let tlRows=[]; let tlDrag=false;
+function drawTimeline(){
+  const rows=[{id:'ball',label:'ボール',color:cssVar('--ball')}, ...P().players.map(p=>({id:p.id,label:'#'+p.num,color:P().teams[p.team].color}))];
+  tlRows=rows; const rowH=14, head=20, left=62; const W=tl.parentElement.clientWidth, H=head+rows.length*rowH+6;
+  const g=fitCanvas(tl,W,H); g.clearRect(0,0,W,H);
+  const dur=S.source?S.source.duration:0, t=now(); const X=tt=>left+(dur?tt/dur:0)*(W-left-10);
+  g.fillStyle=cssVar('--panel2'); g.fillRect(left,0,W-left-10,head);
+  g.font='10px "IBM Plex Mono",monospace'; g.fillStyle=cssVar('--muted'); g.textBaseline='middle'; g.textAlign='left';
+  if(dur){ const pxPerSec=(W-left-10)/dur; const stepT=[1,2,5,10,15,30,60,120,300,600,900,1800,3600].find(v=>v*pxPerSec>=64)||3600; for(let s=0;s<=dur;s+=stepT){ const x=X(s); g.fillRect(x,head-5,1,5); g.fillText(fmt(s).replace(/\.\d+$/,''),x+3,8); } }
+  rows.forEach((r,i)=>{ const y=head+i*rowH; g.fillStyle=i%2?'rgba(127,127,127,.06)':'transparent'; g.fillRect(left,y,W-left-10,rowH);
+    g.fillStyle=r.id===S.selected?cssVar('--accent'):r.color; g.fillRect(2,y+2,3,rowH-4); g.fillStyle=r.id===S.selected?cssVar('--ink'):cssVar('--muted'); g.font=(r.id===S.selected?'500 ':'')+'11px "IBM Plex Mono",monospace'; g.textAlign='left'; g.fillText(r.label,9,y+rowH/2);
+    const kfs=entity(r.id).kfs; for(const k of kfs){ const x=X(k.t); if(k.v){ g.fillStyle=r.color; g.fillRect(x-1,y+3,3,rowH-6); } else { g.strokeStyle=cssVar('--warn'); g.lineWidth=1.5; g.strokeRect(x-1.5,y+3,3,rowH-6); } }
+    // visible spans
+    const kv=kfs; g.fillStyle=r.color+'33'; for(let j=0;j<kv.length-1;j++){ const a=kv[j],b=kv[j+1]; const gap=r.id==='ball'&&a.holder?1e9:P().settings.maxGap; if(a.v&&b.v&&b.t-a.t<=gap) g.fillRect(X(a.t),y+5,X(b.t)-X(a.t),rowH-10); }
+  });
+  const x=X(t); g.fillStyle=cssVar('--accent'); g.fillRect(x-0.5,0,1.5,H); g.beginPath(); g.moveTo(x-5,0); g.lineTo(x+5,0); g.lineTo(x,7); g.closePath(); g.fill();
+  tl._geom={left,head,rowH,W,dur,X};
+}
+tl.addEventListener('pointerdown',e=>{ const gm=tl._geom; if(!gm) return; const rect=tl.getBoundingClientRect(); const x=e.clientX-rect.left, y=e.clientY-rect.top; if(x<gm.left){ const i=Math.floor((y-gm.head)/gm.rowH); if(tlRows[i]){ S.selected=tlRows[i].id; renderRoster(); } return; } tlDrag=true; tl.setPointerCapture(e.pointerId); seek((x-gm.left)/(gm.W-gm.left-10)*gm.dur); });
+tl.addEventListener('pointermove',e=>{ if(!tlDrag) return; const gm=tl._geom; const rect=tl.getBoundingClientRect(); seek(clamp((e.clientX-rect.left-gm.left)/(gm.W-gm.left-10),0,1)*gm.dur); });
+tl.addEventListener('pointerup',()=>tlDrag=false);
+
+// ───────────────────────── roster UI
+function renderRoster(){
+  const host=$('#roster'); host.innerHTML=''; const t=now();
+  for(const team of ['A','B']){
+    const T=P().teams[team]; const box=document.createElement('div'); box.className='team';
+    const h=document.createElement('div'); h.className='team-h'; h.innerHTML=`<span class="sw" style="background:${T.color}"></span><input value="${T.name}" aria-label="チーム名"><input type="color" value="${T.color}" style="width:22px;height:22px;padding:0;border:0;background:none;flex:none" aria-label="色">`;
+    const [nameIn,colIn]=h.querySelectorAll('input'); nameIn.addEventListener('change',()=>{T.name=nameIn.value; scheduleSave(); applySettingsUI();}); colIn.addEventListener('input',()=>{T.color=colIn.value; h.querySelector('.sw').style.background=T.color; scheduleSave();});
+    box.appendChild(h);
+    for(const p of P().players.filter(p=>p.team===team)){
+      const row=document.createElement('div'); row.className='prow'+(S.selected===p.id?' sel':''); const pos=playerPos(p,t); const hasK=p.kfs.length>0;
+      row.innerHTML=`<input class="num" value="${p.num}" maxlength="3" aria-label="背番号"><span class="st ${pos?'vis':hasK?'hid':''}">${pos?'表示中':hasK?'画面外':'未入力'}</span><span class="kfc">${p.kfs.length}KF</span><button class="x" title="削除">×</button>`;
+      row.addEventListener('click',e=>{ if(e.target.closest('input,button')) return; S.selected=p.id; renderRoster(); });
+      const num=row.querySelector('.num'); num.addEventListener('change',()=>{ p.num=num.value.trim()||p.num; num.value=p.num; scheduleSave(); });
+      num.addEventListener('focus',()=>{ S.selected=p.id; $$('.prow').forEach(r=>r.classList.remove('sel')); row.classList.add('sel'); });
+      row.querySelector('.x').addEventListener('click',()=>{ P().players=P().players.filter(q=>q!==p); if(S.selected===p.id) S.selected=null; scheduleSave(); renderRoster(); });
+      box.appendChild(row);
+    }
+    const add=document.createElement('button'); add.className='addp'; add.textContent='＋ 選手を追加'; add.addEventListener('click',()=>{ const n=String(P().players.filter(p=>p.team===team).length+1); const np={id:team+uid(),team,num:n,kfs:[]}; P().players.push(np); S.selected=np.id; scheduleSave(); renderRoster(); });
+    box.appendChild(add); host.appendChild(box);
+  }
+  const b=document.createElement('div'); b.className='team'; const br=document.createElement('div'); br.className='prow ballrow'+(S.selected==='ball'?' sel':''); const bp=ballPos(t);
+  br.innerHTML=`<span class="num" style="color:${cssVar('--ball')}">●</span><span class="st ${bp?'vis':P().ball.kfs.length?'hid':''}">ボール ${bp?'':P().ball.kfs.length?'(非表示)':'(未入力)'}</span><span class="kfc">${P().ball.kfs.length}KF</span><span></span>`;
+  br.addEventListener('click',()=>{ S.selected='ball'; renderRoster(); }); b.appendChild(br); host.appendChild(b);
+  const hint=document.createElement('p'); hint.className='note'; hint.textContent='ボールを選んで選手のコマ(または動画上の選手)をクリックすると「保持」になり、その選手に追従します。'; host.appendChild(hint);
+}
+let rosterDirtyT=0;
+$('#hideBtn').addEventListener('click',()=>{ if(!S.selected) return toast('先に名簿から選手かボールを選んでください'); const e=entity(S.selected); const pos=entityPos(S.selected,now()); setKf(e.kfs,{t:now(),v:false,x:pos?pos[0]:null,y:pos?pos[1]:null}); toast('この時刻から画面外にしました'); renderRoster(); });
+$('#delKfBtn').addEventListener('click',()=>{ if(!S.selected) return; if(removeKfNear(entity(S.selected).kfs,now())) toast('キーフレームを削除しました'); else toast('近くにキーフレームがありません'); renderRoster(); });
+$('#clearKfBtn').addEventListener('click',()=>{ if(!S.selected) return; const e=entity(S.selected); if(!e.kfs.length) return; if(!confirm('選択中のキーフレームをすべて削除しますか？')) return; e.kfs=[]; scheduleSave(); renderRoster(); });
+
+// ───────────────────────── calibration UI
+const lmSel=$('#lmSel'); LANDMARKS.forEach(l=>{ const o=document.createElement('option'); o.value=l.id; o.textContent=l.name; lmSel.appendChild(o); });
+lmSel.addEventListener('change',()=>{ S.lm=lmSel.value; renderCalibList(); });
+function nextUnplaced(c){ const cur=LANDMARKS.findIndex(l=>l.id===S.lm); for(let k=1;k<=LANDMARKS.length;k++){ const l=LANDMARKS[(cur+k)%LANDMARKS.length]; if(!c.pts[l.id]) return l.id; } return S.lm; }
+function renderCalibList(){
+  const c=calibAt(now()); const host=$('#calibList'); host.innerHTML=''; lmSel.value=S.lm;
+  const n=c?Object.keys(c.pts).length:0;
+  $('#calibNote').textContent = !c||n<4 ? `目印を4点以上、動画上でクリックしてください（現在 ${n} 点）。合うと動画にコートの線が重なります。` : c.H ? `位置合わせ済み（${n}点、時刻 ${fmt(c.t)} から有効、誤差 ${(c.err*100).toFixed(2)}%）。ずれていれば点をドラッグして直せます。` : '点の配置が不正です（直線上に並んでいませんか？）';
+  if(!c){ $('#goTrackBtn').hidden=true; return; }
+  for(const l of LANDMARKS){ const d=document.createElement('div'); if(l.id===S.lm) d.classList.add('cur'); const has=!!c.pts[l.id]; d.innerHTML=`<b>${l.name}</b><span class="${has?'ok':'none'}">${has?'✓':'－'}</span>`; d.addEventListener('click',()=>{ S.lm=l.id; renderCalibList(); }); host.appendChild(d); }
+  $('#goTrackBtn').hidden = !(c.H && S.vmode==='calib');
+  const calibs=P().calibs.length; $('#delCalibBtn').textContent = calibs>1 ? `削除（${calibs}件中）` : '削除';
+}
+$('#calibModeBtn').addEventListener('click',()=>setVMode('calib'));
+$('#goTrackBtn').addEventListener('click',()=>{ setVMode('track'); toast('名簿で選手を選び、動画上でその選手の足元をクリックしてください（一時停止中に）',6000); });
+$('#newCalibBtn').addEventListener('click',()=>{ const t=now(); if(P().calibs.some(c=>Math.abs(c.t-t)<0.05)) return toast('同じ時刻に既に位置合わせがあります'); const prev=calibAt(t); const c={id:uid(),t,pts:prev?JSON.parse(JSON.stringify(prev.pts)):{},H:null,Hi:null}; recomputeCalib(c); P().calibs.push(c); P().calibs.sort((a,b)=>a.t-b.t); scheduleSave(); setVMode('calib'); toast('この時刻からの位置合わせを追加しました。前の点を引き継いでいるので、ずれた点をドラッグで直してください。',5000); renderCalibList(); });
+$('#delCalibBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c) return; P().calibs=P().calibs.filter(k=>k!==c); scheduleSave(); renderCalibList(); toast('位置合わせを削除しました'); });
+function setVMode(m){ S.vmode=m; $$('[data-vmode]').forEach(b=>b.classList.toggle('on',b.dataset.vmode===m)); $('#calibModeBtn').classList.toggle('on',m==='calib'); renderCalibList(); }
+$$('[data-vmode]').forEach(b=>b.addEventListener('click',()=>setVMode(b.dataset.vmode)));
+
+// ───────────────────────── video overlay interaction
+function ovPoint(e){ const rect=ov.getBoundingClientRect(); const r=mediaRect(); return {u:(e.clientX-rect.left-r.x)/r.w, v:(e.clientY-rect.top-r.y)/r.h, px:e.clientX-rect.left, py:e.clientY-rect.top, r}; }
+ov.addEventListener('pointerdown',e=>{
+  if(!S.source) return; const pt=ovPoint(e); const t=now();
+  if(S.vmode==='calib'){
+    const c=ensureCalib(t);
+    for(const id in c.pts){ const [x,y]=[pt.r.x+c.pts[id][0]*pt.r.w, pt.r.y+c.pts[id][1]*pt.r.h]; if(Math.hypot(x-pt.px,y-pt.py)<10){ S.calibDrag={c,id}; ov.setPointerCapture(e.pointerId); S.lm=id; renderCalibList(); return; } }
+    if(pt.u<0||pt.u>1||pt.v<0||pt.v>1) return;
+    c.pts[S.lm]=[pt.u,pt.v]; recomputeCalib(c); scheduleSave(); S.lm=nextUnplaced(c); renderCalibList();
+    if(Object.keys(c.pts).length===4 && c.H) toast('4点そろいました。緑のコート線が映像に合っていれば成功です。');
+    return;
+  }
+  if(!S.selected) return toast('先に名簿から選手かボールを選んでください');
+  let u=pt.u, v=pt.v;
+  const det=S.detections.find(d=>pt.u>=d.u&&pt.u<=d.u+d.w&&pt.v>=d.v&&pt.v<=d.v+d.h); if(det){ u=det.u+det.w/2; v=det.v+det.h; }
+  const q=imgToCourt(u,v,t); if(!q) return toast('先に「位置合わせ」でコートの目印を4点以上置いてください',4000);
+  placeEntity(S.selected,[clamp(q[0],-1,C.L+1),clamp(q[1],-1,C.W+1)],t,true);
+});
+ov.addEventListener('pointermove',e=>{ if(!S.calibDrag) return; const pt=ovPoint(e); S.calibDrag.c.pts[S.calibDrag.id]=[pt.u,pt.v]; recomputeCalib(S.calibDrag.c); });
+ov.addEventListener('pointerup',()=>{ if(S.calibDrag){ scheduleSave(); renderCalibList(); S.calibDrag=null; } });
+function placeEntity(id,pos,t,advance){
+  if(id==='ball'){ // dropping the ball on a player = that player holds it
+    let best=null,bd=0.9; for(const p of P().players){ const q=playerPos(p,t); if(!q) continue; const d=Math.hypot(q[0]-pos[0],q[1]-pos[1]); if(d<bd){bd=d;best=p;} }
+    if(best){ setKf(P().ball.kfs,{t,v:true,holder:best.id,x:pos[0],y:pos[1]}); toast(`ボール: #${best.num} が保持`); } else setKf(P().ball.kfs,{t,v:true,x:pos[0],y:pos[1]});
+  } else setKf(byId(id).kfs,{t,v:true,x:pos[0],y:pos[1]});
+  renderRoster();
+  const st=P().settings.step; if(advance&&st>0&&S.source&&S.source.paused) seek(t+st);
+}
+
+// ───────────────────────── board interaction
+function boardPoint(e){ const rect=board.getBoundingClientRect(); const px=e.clientX-rect.left, py=e.clientY-rect.top; const [x,y]=fromPx(px,py); return {px,py,x,y}; }
+function hitPiece(x,y,t){ const b=ballPos(t); if(b&&Math.hypot(b[0]-x,b[1]-y)<0.45) return 'ball'; let best=null,bd=0.7; for(const p of P().players){ const q=playerPos(p,t); if(!q) continue; const d=Math.hypot(q[0]-x,q[1]-y); if(d<bd){bd=d;best=p.id;} } return best; }
+function strokeNear(x,y){ const tol=0.45; for(let i=P().strokes.length-1;i>=0;i--){ const sk=P().strokes[i]; if(sk.type==='text'){ if(Math.hypot(sk.pts[0][0]-x,sk.pts[0][1]-y)<1.2 || (x>=sk.pts[0][0]&&x<sk.pts[0][0]+sk.text.length*0.5&&Math.abs(y-sk.pts[0][1])<0.4)) return i; continue; } for(let j=0;j<sk.pts.length-1;j++){ if(distSeg([x,y],sk.pts[j],sk.pts[j+1])<tol) return i; } if(sk.pts.length===1&&Math.hypot(sk.pts[0][0]-x,sk.pts[0][1]-y)<tol) return i; } return -1; }
+function distSeg(p,a,b){ const dx=b[0]-a[0],dy=b[1]-a[1]; const l2=dx*dx+dy*dy||1e-9; const u=clamp(((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l2,0,1); return Math.hypot(p[0]-a[0]-u*dx,p[1]-a[1]-u*dy); }
+board.addEventListener('pointerdown',e=>{
+  const pt=boardPoint(e), t=now(); board.setPointerCapture(e.pointerId);
+  if(S.tool==='select'){
+    const hit=hitPiece(pt.x,pt.y,t);
+    if(hit){ S.selected=hit; S.drag={id:hit,moved:false}; renderRoster(); return; }
+    if(pt.x<-1||pt.x>C.L+1||pt.y<-1||pt.y>C.W+1) return;
+    if(S.selected){ placeEntity(S.selected,[pt.x,pt.y],t,false); }
+    else toast('名簿から選手を選ぶと、クリックした位置に置けます');
+    return;
+  }
+  if(S.tool==='text'){ openTextInput(pt); return; }
+  if(S.tool==='erase'){ const i=strokeNear(pt.x,pt.y); if(i>=0){ S.undo.push(P().strokes.slice()); P().strokes.splice(i,1); scheduleSave(); } return; }
+  S.drawing={type:S.tool,pts:[[pt.x,pt.y]],color:S.penColor,width:S.penWidth};
+});
+board.addEventListener('pointermove',e=>{
+  const pt=boardPoint(e), t=now();
+  if(S.drag){ S.drag.moved=true; const id=S.drag.id; const e2=entity(id); const kf={t,v:true,x:clamp(pt.x,-1,C.L+1),y:clamp(pt.y,-1,C.W+1)}; setKf(e2.kfs,kf); return; }
+  if(S.drawing){ if(S.drawing.type==='pen'){ const last=S.drawing.pts[S.drawing.pts.length-1]; if(Math.hypot(last[0]-pt.x,last[1]-pt.y)>0.08) S.drawing.pts.push([pt.x,pt.y]); } else S.drawing.pts=[S.drawing.pts[0],[pt.x,pt.y]]; }
+});
+board.addEventListener('pointerup',e=>{
+  if(S.drag){ const d=S.drag; S.drag=null; if(d.moved){ if(d.id==='ball'){ const pt=boardPoint(e); placeEntity('ball',[pt.x,pt.y],now(),false); } renderRoster(); } return; }
+  if(S.drawing){ if(S.drawing.pts.length>=2){ S.undo.push(P().strokes.slice()); P().strokes.push(S.drawing); scheduleSave(); } S.drawing=null; }
+});
+function openTextInput(pt){ const old=boardwrap.querySelector('.txtin'); if(old) old.remove(); const inp=document.createElement('input'); inp.className='txtin'; inp.placeholder='文字を入力して Enter'; inp.style.left=pt.px+'px'; inp.style.top=(pt.py-14)+'px'; boardwrap.appendChild(inp); inp.focus();
+  const done=()=>{ const v=inp.value.trim(); inp.remove(); if(v){ S.undo.push(P().strokes.slice()); P().strokes.push({type:'text',pts:[[pt.x,pt.y]],color:S.penColor,width:S.penWidth,text:v}); scheduleSave(); } };
+  inp.addEventListener('keydown',ev=>{ if(ev.key==='Enter') done(); if(ev.key==='Escape') inp.remove(); ev.stopPropagation(); }); inp.addEventListener('blur',done); }
+$$('#tools .btn').forEach(b=>b.addEventListener('click',()=>{ S.tool=b.dataset.tool; $$('#tools .btn').forEach(x=>x.classList.toggle('on',x===b)); board.style.cursor = S.tool==='select'?'default':'crosshair'; }));
+const COLORS=['#f4f1ea','#1c1e24','#e8b04a','#d8443c','#2f6fd6','#3a9d5d'];
+COLORS.forEach((c,i)=>{ const b=document.createElement('button'); b.className='color'+(i===0?' on':''); b.style.background=c; b.title=c; b.setAttribute('aria-label','色 '+c); b.addEventListener('click',()=>{ S.penColor=c; $$('#colors .color').forEach(x=>x.classList.toggle('on',x===b)); }); $('#colors').appendChild(b); });
+$('#penW').addEventListener('change',e=>S.penWidth=parseFloat(e.target.value));
+function undoDraw(){ if(!S.undo.length) return; P().strokes=S.undo.pop(); scheduleSave(); }
+$('#undoBtn').addEventListener('click',undoDraw);
+$('#clearDrawBtn').addEventListener('click',()=>{ if(!P().strokes.length) return; S.undo.push(P().strokes.slice()); P().strokes=[]; scheduleSave(); });
+
+// ───────────────────────── settings
+function applySettingsUI(){ const st=P().settings; $('#maxGap').value=st.maxGap; $('#stepSec').value=st.step; $('#split1').value=st.split1; $('#split2').value=st.split2; $('#trails').checked=st.trails; $('#division').value=st.division; $('#offense').value=st.offense; $('#showProj').checked=st.showProj;
+  $('#offense').options[0].textContent='OF: '+P().teams.A.name; $('#offense').options[1].textContent='OF: '+P().teams.B.name; }
+$('#maxGap').addEventListener('change',e=>{P().settings.maxGap=parseFloat(e.target.value)||3; scheduleSave();});
+$('#stepSec').addEventListener('change',e=>{P().settings.step=parseFloat(e.target.value)||0; scheduleSave();});
+$('#split1').addEventListener('change',e=>{P().settings.split1=parseFloat(e.target.value)||5.8; scheduleSave();});
+$('#split2').addEventListener('change',e=>{P().settings.split2=parseFloat(e.target.value)||9.8; scheduleSave();});
+$('#trails').addEventListener('change',e=>{P().settings.trails=e.target.checked; scheduleSave();});
+$('#division').addEventListener('change',e=>{P().settings.division=e.target.value; scheduleSave();});
+$('#offense').addEventListener('change',e=>{P().settings.offense=e.target.value; scheduleSave();});
+$('#showProj').addEventListener('change',e=>{P().settings.showProj=e.target.checked; scheduleSave();});
+
+// ───────────────────────── persistence
+function serialize(){ const pr=P(); return JSON.stringify({...pr, calibs:pr.calibs.map(c=>({id:c.id,t:c.t,pts:c.pts}))}); }
+function loadProjectData(data){ const pr={...newProject(),...data}; pr.calibs=(data.calibs||[]).map(c=>{ const k={id:c.id||uid(),t:c.t||0,pts:c.pts||{}}; recomputeCalib(k); return k; }); pr.settings={...newProject().settings,...(data.settings||{})}; S.project=pr; S.selected=null; renderRoster(); renderCalibList(); applySettingsUI();
+  if(pr.source&&pr.source.type==='youtube' && !(S.source&&S.source.kind==='youtube'&&S.source.id===pr.source.id)){ $('#ytUrl').value='https://www.youtube.com/watch?v='+pr.source.id; openYouTube(pr.source.id,0,true); } }
+let saveTimer; function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ try{ if(S.source&&(S.source.kind==='video'||S.source.kind==='youtube')) localStorage.setItem('courttrace:'+S.source.key, serialize()); }catch(e){} },600); }
+function loadAutosave(name){ try{ const s=localStorage.getItem('courttrace:'+name); if(s){ loadProjectData(JSON.parse(s)); toast('前回の作業内容を復元しました（'+name+'）'); } }catch(e){} }
+async function download(name,blob){
+  try{ const dl = (window.claude && window.claude.use) ? await window.claude.use('downloads') : null;
+    if(dl){ try{ await dl.save({filename:name, data:blob}); toast('保存しました: '+name); }catch(e){ if(e&&e.code!=='declined') toast('保存できませんでした: '+(e.message||e.code)); } return; } }catch(e){}
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},1000); }
+$('#saveBtn').addEventListener('click',async()=>{ const json=serialize(); const name=(P().name||'project').replace(/\.[^.]+$/,'')+'.courttrace.json'; try{ await navigator.clipboard.writeText(json); }catch(e){} await download(name,new Blob([json],{type:'application/json'})); });
+$('#projIn').addEventListener('change',e=>{ const f=e.target.files[0]; if(!f) return; f.text().then(txt=>{ try{ loadProjectData(JSON.parse(txt)); toast(P().source&&P().source.type==='youtube' ? 'プロジェクトを読み込み、YouTube動画を開いています。' : 'プロジェクトを読み込みました。同じ動画を「動画を開く」で開いてください。',4500); }catch(err){ toast('読み込めませんでした: '+err.message); } }); e.target.value=''; });
+$('#pngBtn').addEventListener('click',()=>{ board.toBlob(b=>download('board_'+fmt(now()).replace(/[:.]/g,'-')+'.png',b)); });
+
+// ───────────────────────── AI detection (optional; loads TF.js lazily)
+let detector=null, detLoading=null;
+function loadScript(src){ return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=()=>rej(new Error('読み込み失敗: '+src)); document.head.appendChild(s); }); }
+async function ensureDetector(){
+  if(detector) return detector;
+  if(!detLoading) detLoading=(async()=>{ $('#detNote').textContent='モデルを読み込み中…（初回のみ、数十秒かかることがあります）';
+    await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');
+    await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
+    detector=await window.cocoSsd.load({base:'lite_mobilenet_v2'}); $('#detNote').textContent='モデル読み込み済み。枠をクリックすると足元がKFになります。'; return detector; })().catch(e=>{ detLoading=null; $('#detNote').textContent='AI検出を読み込めませんでした。ネットワーク制限のある環境（埋め込み表示など）では使えません。HTMLファイルをローカルで開くと動作します。'; throw e; });
+  return detLoading;
+}
+async function detectNow(){ const d=await ensureDetector(); const res=await d.detect(S.source.el, 20, 0.35); const W=S.source.width,H=S.source.height; S.detections=res.filter(r=>r.class==='person').map(r=>({u:r.bbox[0]/W,v:r.bbox[1]/H,w:r.bbox[2]/W,h:r.bbox[3]/H,score:r.score})); return S.detections; }
+const YT_NO_AI='YouTube動画は映像を読み取れないため、AI検出は使えません。動画をダウンロードして「動画を開く」で読み込むと使えます。';
+$('#detectBtn').addEventListener('click',async()=>{ if(!S.source) return toast('先に動画を開いてください'); if(S.source.kind==='youtube') return toast(YT_NO_AI,6000); try{ const r=await detectNow(); toast(r.length?`${r.length}人検出。枠をクリックすると選択中の選手のKFになります`:'人物を検出できませんでした'); }catch(e){ toast(e.message,5000); } });
+let trackAbort=false;
+function stopTracking(){ trackAbort=true; S.tracking=false; $('#stopTrackBtn').hidden=true; $('#autoTrackBtn').disabled=false; }
+$('#stopTrackBtn').addEventListener('click',stopTracking);
+$('#autoTrackBtn').addEventListener('click',async()=>{
+  if(!S.source) return toast('先に動画を開いてください'); if(S.source.kind==='youtube') return toast(YT_NO_AI,6000); if(!S.selected||S.selected==='ball') return toast('自動追跡は選手を選んでから');
+  const p=byId(S.selected); const t0=now(); const start=playerPos(p,t0); if(!start) return toast('まず現在の時刻でこの選手の位置を1回クリックしてください（追跡の起点になります）',5000);
+  if(!calibAt(t0)||!calibAt(t0).H) return toast('位置合わせが必要です');
+  try{ await ensureDetector(); }catch(e){ return toast(e.message,5000); }
+  S.source.pause(); updatePlayBtn(); trackAbort=false; S.tracking=true; $('#stopTrackBtn').hidden=false; $('#autoTrackBtn').disabled=true;
+  const dt=0.25, maxT=Math.min(S.source.duration, t0+15); let prev=courtToImg(start[0],start[1],t0); let n=0;
+  for(let t=t0+dt; t<=maxT && !trackAbort; t+=dt){
+    await S.source.seekAsync(t); const dets=await detectNow(); if(!prev) break;
+    let best=null,bd=0.09; for(const d of dets){ const fu=d.u+d.w/2, fv=d.v+d.h; const dist=Math.hypot(fu-prev[0],fv-prev[1]); if(dist<bd){bd=dist;best=[fu,fv];} }
+    if(!best){ toast(`#${p.num} を見失いました（${fmt(t)}）。位置をクリックし直して再開できます`,4000); break; }
+    const q=imgToCourt(best[0],best[1],t); if(!q) break; setKf(p.kfs,{t,v:true,x:clamp(q[0],-1,C.L+1),y:clamp(q[1],-1,C.W+1)}); prev=best; n++;
+    $('#detNote').innerHTML=`<span class="progress">追跡中 #${p.num} ${fmt(t)} (${n}KF)</span>`;
+  }
+  stopTracking(); renderRoster(); $('#detNote').textContent=`自動追跡を終了（${n}KF追加）。ずれた箇所はボードでコマをドラッグして直せます。`;
+});
+
+// ───────────────────────── keyboard
+document.addEventListener('keydown',e=>{
+  if(e.target.matches('input,select,textarea')) return;
+  if(e.code==='Space'){ e.preventDefault(); togglePlay(); }
+  else if(e.key==='ArrowLeft'){ e.preventDefault(); seek(now()-(e.shiftKey?1:1/FPS)); }
+  else if(e.key==='ArrowRight'){ e.preventDefault(); seek(now()+(e.shiftKey?1:1/FPS)); }
+  else if(e.key==='Delete'||e.key==='Backspace'){ if(S.selected){ removeKfNear(entity(S.selected).kfs,now()); renderRoster(); } }
+  else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){ e.preventDefault(); undoDraw(); }
+  else if(e.key==='h'||e.key==='H'){ $('#hideBtn').click(); }
+});
+
+// ───────────────────────── main loop
+let lastNow=performance.now(), lastRosterT=-1;
+function frame(ts){
+  const dt=(ts-lastNow)/1000; lastNow=ts;
+  if(S.source){ S.source.tick(dt); const t=now(), dur=S.source.duration; $('#tc').textContent=fmt(t)+' / '+fmt(dur); if(!scrubbing) scrub.value=dur?Math.round(t/dur*1000):0; updatePlayBtn(); if(Math.abs(t-lastRosterT)>0.2){ lastRosterT=t; refreshRosterStatus(); } }
+  drawBoard(); drawOverlay(); drawTimeline();
+  requestAnimationFrame(frame);
+}
+function refreshRosterStatus(){ const t=now(); $$('#roster .prow').forEach((row,i)=>{}); const rows=[...$('#roster').querySelectorAll('.prow:not(.ballrow)')]; const ps=[...P().players.filter(p=>p.team==='A'),...P().players.filter(p=>p.team==='B')]; rows.forEach((row,i)=>{ const p=ps[i]; if(!p) return; const st=row.querySelector('.st'); const pos=playerPos(p,t); const cls=pos?'vis':p.kfs.length?'hid':''; st.className='st '+cls; st.textContent=pos?'表示中':p.kfs.length?'画面外':'未入力'; row.querySelector('.kfc').textContent=p.kfs.length+'KF'; }); const br=$('#roster .ballrow'); if(br){ const bp=ballPos(t); const st=br.querySelector('.st'); st.className='st '+(bp?'vis':P().ball.kfs.length?'hid':''); st.textContent='ボール '+(bp?'':P().ball.kfs.length?'(非表示)':'(未入力)'); br.querySelector('.kfc').textContent=P().ball.kfs.length+'KF'; } }
+renderRoster(); renderCalibList(); applySettingsUI(); setVMode('track');
+requestAnimationFrame(frame);
+})();
+</script>

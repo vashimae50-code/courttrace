@@ -248,6 +248,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         <h3>AI自動解析 <span class="hint">手元の動画ファイルのみ</span></h3>
         <div class="actions"><button class="btn" id="autoAllBtn" style="font-weight:600">動画全体を自動解析</button><button class="btn sm" id="scanBtn">範囲だけ解析</button><button class="btn sm" id="stopScanBtn" hidden>停止</button></div>
         <div class="field" style="margin-top:6px"><label>人物検出の間隔</label><select id="scanDt" style="width:84px"><option value="0.25">0.25秒</option><option value="0.5" selected>0.5秒</option><option value="1">1秒</option></select></div>
+        <div class="field"><label>白線に吸着して補正（推奨）</label><input type="checkbox" id="useLines" checked></div>
         <div class="field"><label>解析速度（再生倍率）</label><select id="scanRate" style="width:84px"><option value="1" selected>1倍</option><option value="1.5">1.5倍</option><option value="2">2倍</option></select></div>
         <p class="note" id="scanNote">動画を再生しながら、カメラの動きを床の模様から追いかけて位置合わせを毎フレーム更新し、人物を検出してコート上の位置に変換、ユニフォームの色でチームを分けます。所要時間は動画の長さ÷倍率。<b>解析中はこのタブを表示したままにしてください</b>（裏に回すと止まります）。位置合わせ（アンカー）は1分に1回程度あると精度が保てます。</p>
         <div id="clusterBox" hidden>
@@ -287,6 +288,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
           <button class="btn sm" id="newCalibBtn" title="カメラの向きが変わったときに、その見え方用の位置合わせを追加">カメラの向きを追加</button>
           <button class="btn sm danger" id="delCalibBtn">削除</button>
         </div>
+        <button class="btn sm" id="snapBtn" hidden style="margin-top:6px;width:100%">白線に吸着して微調整</button>
         <button class="btn sm" id="mergeCalibBtn" hidden style="margin-top:6px;width:100%">左右の位置合わせを1つに統合（固定カメラ向け）</button>
         <button class="btn" id="goTrackBtn" hidden style="margin:6px 0;width:100%">✓ 位置合わせOK → 追跡に進む</button>
         <div class="wiz" id="wizBox" hidden>
@@ -807,7 +809,7 @@ function drawOverlay(){
   const c=calibAt(t);
   if(c&&c.Hi&&P().settings.showProj){ g.strokeStyle= S.vmode==='calib' ? 'rgba(80,220,120,.9)' : 'rgba(255,255,255,.35)'; g.lineWidth=1.5; g.lineJoin='round';
     for(const path of COURT_PATHS){ g.beginPath(); let pen=false; for(const p of path){ const q=applyH(c.Hi,p[0],p[1]); if(!q||q[2]<=0||Math.abs(q[0])>3||Math.abs(q[1])>3){pen=false;continue;} const px=I(q[0],q[1]); pen?g.lineTo(...px):g.moveTo(...px); pen=true; } g.stroke(); } }
-  if(S.tracking&&S.liveH){ const inl=S.liveInl|0; const col=inl<0?'#e0463c':inl<25?'#e0a020':'#4fd07a'; g.fillStyle='rgba(0,0,0,.6)'; g.fillRect(r.x+8,r.y+8,190,26); g.fillStyle=col; g.beginPath(); g.arc(r.x+22,r.y+21,6,0,Math.PI*2); g.fill(); g.fillStyle='#fff'; g.font='12px "Noto Sans JP",sans-serif'; g.textAlign='left'; g.textBaseline='middle'; g.fillText(inl<0?'カメラ追跡: 失敗（前の推定を維持）':`カメラ追跡: 良好（${inl}点）`,r.x+34,r.y+21); }
+  if(S.tracking&&S.liveH){ const inl=S.liveInl|0; const col=inl<0?'#e0463c':inl<25?'#e0a020':'#4fd07a'; g.fillStyle='rgba(0,0,0,.6)'; g.fillRect(r.x+8,r.y+8,190,26); g.fillStyle=col; g.beginPath(); g.arc(r.x+22,r.y+21,6,0,Math.PI*2); g.fill(); g.fillStyle='#fff'; g.font='12px "Noto Sans JP",sans-serif'; g.textAlign='left'; g.textBaseline='middle'; g.fillText(inl<0?'カメラ追跡: 失敗（前の推定を維持）':`カメラ追跡: 良好（${inl}点）`,r.x+34,r.y+21); const rf=S.liveRefine; if(rf){ g.fillStyle='rgba(0,0,0,.6)'; g.fillRect(r.x+8,r.y+38,190,22); g.fillStyle=rf.rejected?'#e0a020':'#4fd07a'; g.font='11px "Noto Sans JP",sans-serif'; g.fillText(`白線吸着: ${rf.rejected?'保留':'OK'} ${rf.inliers}/${rf.total}`,r.x+14,r.y+49); } }
   if(S.vmode==='calib'){
     if(c) for(const id in c.pts){ const [px,py]=I(...c.pts[id]); const cur=id===S.lm; const bad=c.bad&&c.bad[id]; g.beginPath(); g.arc(px,py,cur?8:6,0,Math.PI*2); g.fillStyle=cur?'#e8b04a':bad?'#e0463c':'#4fd07a'; g.fill(); g.strokeStyle='#000'; g.lineWidth=1.5; g.stroke(); g.fillStyle='#fff'; g.font='11px "Noto Sans JP",sans-serif'; g.textAlign='left'; g.shadowColor='#000'; g.shadowBlur=3; g.fillText(LM[id].name,px+9,py-8); g.shadowBlur=0; }
     return;
@@ -916,6 +918,7 @@ function renderCalibList(){
   $('#goTrackBtn').hidden = !(c.H && S.vmode==='calib');
   const calibs=P().calibs.length; $('#delCalibBtn').textContent = calibs>1 ? `削除（${calibs}件中）` : '削除';
   $('#mergeCalibBtn').hidden = calibs<2;
+  $('#snapBtn').hidden = !(c.H && S.source && S.source.kind!=='youtube');
   renderViews(c);
   if(c.H){ const xs=Object.keys(c.pts).map(id=>LM[id]).filter(Boolean).map(l=>l.x); const oneSide = xs.length && (xs.every(x=>x<=C.L/2+0.1)||xs.every(x=>x>=C.L/2-0.1)); if(oneSide) $('#calibNote').textContent += ' 片側の点だけです。カメラが固定でコート全体が映るなら、反対側の点も同じ位置合わせに足すと全体の精度が上がります（「目印を置く」→ボードで反対側の点をクリック→動画でクリック）。'; }
   renderWizard();
@@ -928,7 +931,9 @@ const wizCalib=()=>S.wiz?P().calibs.find(k=>k.id===S.wiz.calibId):null;
 function wizNext(after){ const c=wizCalib(); if(!c) return; const order=WIZ_ORDER[S.wiz.phase]||[]; const start=after?order.indexOf(after)+1:0; for(let i=0;i<order.length;i++){ const id=order[(start+i)%order.length]; if(!c.pts[id]&&!S.wiz.skipped[id]){ S.lm=id; return; } } S.lm=null; }
 function wizStart(phase,calib){ S.wiz={phase,calibId:calib.id,skipped:{}}; wizNext(); setVMode('calib'); renderCalibList(); }
 function wizSkip(){ if(!S.wiz||!S.lm) return; S.wiz.skipped[S.lm]=true; const cur=S.lm; wizNext(cur); renderCalibList(); }
-function wizConfirm(){ const c=wizCalib(); if(!c||!c.H||Object.keys(c.pts).length<4) return toast('点が4つ以上そろい、緑の線が合ってから確定してください'); if(!c.thumb) captureThumb(c); if(S.wiz.phase==='L'){ S.wiz.phase='Ldone'; S.lm=null; toast('左コートを確定しました。次は右コートが映っている時刻まで動画を進めてください。',5000); } else { S.wiz.phase='done'; S.lm=null; setVMode('track'); toast('右コートも確定しました。位置合わせ完了です。名簿で選手を選んで追跡を始めましょう。',5000); } renderCalibList(); }
+function snapCalib(c,radii){ if(!S.source||S.source.kind==='youtube'||!c||!c.H) return null; try{ const rf=refineToLines(S.source.el,c.H,{radii:radii||[22,12,6]}); if(!rf||rf.inliers<40||rf.score<0.3) return rf||null; const Hi=mat3inv(rf.H); if(!Hi) return null; for(const id in c.pts){ const l=LM[id]; const q=applyH(Hi,l.x,l.y); if(q&&q[2]>0) c.pts[id]=[q[0],q[1]]; } recomputeCalib(c); c.snapped=true; scheduleSave(); return rf; }catch(e){ console.warn(e); return null; } }
+function wizConfirm(){ const c=wizCalib(); if(!c||!c.H||Object.keys(c.pts).length<4) return toast('点が4つ以上そろい、緑の線が合ってから確定してください'); if(!c.thumb) captureThumb(c);
+  const rf=snapCalib(c); if(rf&&rf.inliers>=40&&rf.score>=0.3) toast(`白線に合わせて微調整しました（一致 ${rf.inliers}/${rf.total} 点）`,4000); if(S.wiz.phase==='L'){ S.wiz.phase='Ldone'; S.lm=null; toast('左コートを確定しました。次は右コートが映っている時刻まで動画を進めてください。',5000); } else { S.wiz.phase='done'; S.lm=null; setVMode('track'); toast('右コートも確定しました。位置合わせ完了です。名簿で選手を選んで追跡を始めましょう。',5000); } renderCalibList(); }
 function wizStartRightShift(){ const t=now(); const left=wizCalib(); if(left&&Math.abs(left.t-t)<0.5) return toast('先に、右コートが映っている時刻まで動画を進めてください（下のタイムラインやスライダーで移動）',5000); if(P().calibs.some(k=>Math.abs(k.t-t)<0.05)) return toast('同じ時刻に既に位置合わせがあります'); const c={id:uid(),t,pts:{},H:null,Hi:null}; recomputeCalib(c); captureThumb(c); P().calibs.push(c); P().calibs.sort((a,b)=>a.t-b.t); S.viewLast=c; scheduleSave(); wizStart('R',c); toast(`${fmt(t)} から右コートの位置合わせを始めます。光っている点の場所を動画でクリックしてください。`,5000); }
 function wizStartRightSame(){ const c=wizCalib(); if(!c) return; S.wiz.phase='R'; S.wiz.skipped={}; wizNext(); renderCalibList(); }
 function wizBegin(){ const t=now(); const c=ensureCalib(t); if(S.wiz&&S.wiz.calibId===c.id&&S.wiz.phase!=='done'){ setVMode('calib'); renderCalibList(); return; } wizStart('L',c); }
@@ -965,6 +970,9 @@ $('#undoPtBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c) re
 $('#clearPtsBtn').addEventListener('click',async()=>{ const c=calibAt(now()); if(!c||!Object.keys(c.pts).length) return; if(!(await confirmAsk('この位置合わせの点をすべて消しますか？'))) return; c.pts={}; S.ptOrder=[]; S.lm=null; recomputeCalib(c); scheduleSave(); renderCalibList(); });
 function recomputeScan(){ const sc=S.scan; if(!sc) return 0; let n=0; const byId2=Object.fromEntries(P().calibs.map(c=>[c.id,c])); const conv=(pt,t)=>{ const e=scanH(t); if(e){ const r=applyH(e.H,pt.fu,pt.fv); return r?[r[0],r[1]]:null; } const c=pt.cid&&byId2[pt.cid]; if(c&&c.H){ const r=applyH(c.H,pt.fu,pt.fv); return r?[r[0],r[1]]:null; } if(P().calibs.length===1&&P().calibs[0].H){ const r=applyH(P().calibs[0].H,pt.fu,pt.fv); return r?[r[0],r[1]]:null; } return null; };
   for(const id in sc.tracks){ const tr=sc.tracks[id]; for(const pt of tr.pts){ if(pt.fu==null) continue; const q=conv(pt,pt.t); if(q){ pt.x=clamp(q[0],-1,C.L+1); pt.y=clamp(q[1],-1,C.W+1); n++; } } } for(const fr of sc.frames) for(const d of fr.dets){ if(d.fu==null) continue; const q=conv(d,fr.t); if(q){ d.x=q[0]; d.y=q[1]; } } saveScan(); return n; }
+$('#snapBtn').addEventListener('click',()=>{ const c=calibByTime(now()); if(!c||!c.H) return; const rf=refineToLines(S.source.el,c.H,{radii:[22,12,6]}); if(!rf||rf.inliers<40||rf.score<0.3) return toast(`白線に十分合わせられませんでした（一致 ${rf?rf.inliers:0} 点）。点を置き直してから再度お試しください`,5000);
+  // move the anchor's landmark points onto the refined homography so the user can still see/edit them
+  const Hi=mat3inv(rf.H); if(!Hi) return; for(const id in c.pts){ const l=LM[id]; const q=applyH(Hi,l.x,l.y); if(q&&q[2]>0) c.pts[id]=[q[0],q[1]]; } recomputeCalib(c); c.snapped=true; scheduleSave(); renderCalibList(); toast(`白線に吸着しました（一致 ${rf.inliers}/${rf.total} 点）。緑の線がコートの線に重なっているか確認してください`,5000); });
 $('#mergeCalibBtn').addEventListener('click',async()=>{ const cs=P().calibs; if(cs.length<2) return; if(!(await confirmAsk(`${cs.length}件の位置合わせの点をすべて1つにまとめます（カメラが動いていない前提）。よろしいですか？`))) return; const pts={}; for(const c of cs) Object.assign(pts,c.pts); const m={id:uid(),t:0,pts,H:null,Hi:null}; recomputeCalib(m); if(!m.H) return toast('統合した点では計算できませんでした'); P().calibs=[m]; S.wiz=null; S.lm=null; scheduleSave(); renderCalibList(); const n=recomputeScan(); toast(`統合しました（${Object.keys(pts).length}点、誤差 ${(m.err*100).toFixed(2)}%）。`+(n?`解析結果 ${n} 点の位置も新しい位置合わせで計算し直しました。`:'')+'赤い点があれば置き直してください。',7000); });
 $('#delCalibBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c) return; P().calibs=P().calibs.filter(k=>k!==c); scheduleSave(); renderCalibList(); toast('位置合わせを削除しました'); });
 function setVMode(m){ S.vmode=m; $$('[data-vmode]').forEach(b=>b.classList.toggle('on',b.dataset.vmode===m)); $('#calibModeBtn').classList.toggle('on',m==='calib'); renderCalibList(); }
@@ -1094,7 +1102,7 @@ async function ensureYolo(){
     await loadFirst(['vendor/ort/ort.webgpu.min.js','https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.webgpu.min.js']);
     const localWasm=await urlExists('vendor/ort/ort-wasm-simd-threaded.jsep.wasm');
     ort.env.wasm.wasmPaths= localWasm ? new URL('vendor/ort/',location.href).href : 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
-    ort.env.wasm.numThreads=Math.min(4,navigator.hardwareConcurrency||2);
+    ort.env.wasm.numThreads=Math.min(4,navigator.hardwareConcurrency||2); ort.env.logLevel='error';
     if(!(await urlExists('model/yolov10n.onnx'))) throw new Error('YOLO model missing');
     let sess=null, ep='wasm';
     if(navigator.gpu){ try{ sess=await ort.InferenceSession.create('model/yolov10n.onnx',{executionProviders:['webgpu']}); await sess.run({images:new ort.Tensor('float32',new Float32Array(3*YOLO_IN*YOLO_IN),[1,3,YOLO_IN,YOLO_IN])}); ep='webgpu'; }catch(e){ console.warn('WebGPU unavailable, using CPU',e); sess=null; } }
@@ -1171,12 +1179,33 @@ function kmeans(feats,k,iters=25){ if(!feats.length) return {centers:[],labels:[
 function dist2(a,b){ let d=0; for(let i=0;i<a.length;i++) d+=(a[i]-b[i])**2; return d; }
 let jsfeatReady=null; function loadJsfeat(){ if(window.jsfeat) return Promise.resolve(); if(!jsfeatReady) jsfeatReady=loadFirst(['vendor/jsfeat-min.js','https://cdnjs.cloudflare.com/ajax/libs/jsfeat/0.0.8/jsfeat-min.js']).catch(e=>{ jsfeatReady=null; throw new Error('カメラ追跡ライブラリを読み込めませんでした'); }); return jsfeatReady; }
 const mul9=(a,b)=>{ const r=new Array(9).fill(0); for(let i=0;i<3;i++)for(let j=0;j<3;j++)for(let k=0;k<3;k++) r[i*3+j]+=a[i*3+k]*b[k*3+j]; return r; };
+// ---------- Snap a homography to the painted white court lines (court model → image), coarse to fine.
+const RFW=960, RFH=540; const rfCv=document.createElement('canvas'); rfCv.width=RFW; rfCv.height=RFH; const rfG=rfCv.getContext('2d',{willReadFrequently:true});
+let rfMap=null; // Float32Array whiteness 0..1
+function whitenessMap(el){ rfG.drawImage(el,0,0,RFW,RFH); const d=rfG.getImageData(0,0,RFW,RFH).data; const N=RFW*RFH; if(!rfMap||rfMap.length!==N) rfMap=new Float32Array(N); for(let i=0;i<N;i++){ const r=d[i*4],g=d[i*4+1],b=d[i*4+2]; const mn=Math.min(r,g,b), mx=Math.max(r,g,b); const bright=clamp((mn-150)/50,0,1), grey=clamp((45-(mx-mn))/30,0,1); rfMap[i]=bright*grey; } return rfMap; }
+const RF_SAMPLES=(()=>{ const out=[]; const paths=COURT_PATHS.filter(p=>p.length>2||Math.hypot(p[1][0]-p[0][0],p[1][1]-p[0][1])>1.0); for(const path of paths){ for(let i=0;i<path.length-1;i++){ const a=path[i],b=path[i+1]; const L=Math.hypot(b[0]-a[0],b[1]-a[1]); if(L<0.05) continue; const n=Math.max(1,Math.round(L/0.3)); const tx=(b[0]-a[0])/L, ty=(b[1]-a[1])/L; for(let k=0;k<n;k++){ const u=(k+0.5)/n; out.push({x:a[0]+(b[0]-a[0])*u,y:a[1]+(b[1]-a[1])*u,tx,ty}); } } } return out; })();
+function ransacH(src,dst,thrPx,iters){ // src: court points, dst: normalized image points → returns H (court ← image)
+  const n=src.length; if(n<8) return null; let bestC2I=null,bestIn=[];
+  for(let it=0;it<iters;it++){ const pick=[]; while(pick.length<4){ const j=Math.floor(Math.random()*n); if(!pick.includes(j)) pick.push(j); } const C2I=computeHomography(pick.map(j=>src[j]),pick.map(j=>dst[j])); if(!C2I) continue; const inl=[]; for(let j=0;j<n;j++){ const q=applyH(C2I,src[j][0],src[j][1]); if(!q||q[2]<=0) continue; const dx=(q[0]-dst[j][0])*RFW, dy=(q[1]-dst[j][1])*RFH; if(dx*dx+dy*dy<thrPx*thrPx) inl.push(j); } if(inl.length>bestIn.length){ bestIn=inl; bestC2I=C2I; } }
+  if(bestIn.length<8) return null; const C2I=computeHomography(bestIn.map(j=>src[j]),bestIn.map(j=>dst[j]))||bestC2I; const H=mat3inv(C2I); if(!H) return null; return {H,inliers:bestIn.length}; }
+// H: court ← normalized image. Returns {H, inliers, total, score} or null when the lines cannot be trusted.
+function refineToLines(el,H,opts={}){
+  const map=opts.map||whitenessMap(el); let cur=H; let result=null; const radii=opts.radii||[18,10,5];
+  const passes=[]; for(const R of radii){ passes.push(R); if(R<=12) passes.push(R); }
+  for(const R of passes){ const Hi=mat3inv(cur); if(!Hi) return result; const src=[],dst=[]; let total=0;
+    for(const sp of RF_SAMPLES){ const q=applyH(Hi,sp.x,sp.y); if(!q||q[2]<=0) continue; const px=q[0]*RFW, py=q[1]*RFH; if(px<2||py<2||px>RFW-3||py>RFH-3) continue; const q2=applyH(Hi,sp.x+sp.tx*0.3,sp.y+sp.ty*0.3); if(!q2||q2[2]<=0) continue; let dx=q2[0]*RFW-px, dy=q2[1]*RFH-py; const L=Math.hypot(dx,dy)||1; dx/=L; dy/=L; const nx=-dy, ny=dx; total++;
+      let bestV=0.45, bestO=null; for(let o=-R;o<=R;o++){ const x=Math.round(px+nx*o), y=Math.round(py+ny*o); if(x<0||y<0||x>=RFW||y>=RFH) continue; const v=map[y*RFW+x]-0.012*Math.abs(o); if(v>bestV){ bestV=v; bestO=o; } }
+      if(bestO===null) continue; src.push([sp.x,sp.y]); dst.push([(px+nx*bestO)/RFW,(py+ny*bestO)/RFH]); }
+    if(src.length<12) return result; const r=ransacH(src,dst,Math.max(2.5,R*0.35),120); if(!r) return result; cur=r.H; result={H:cur,inliers:r.inliers,total,matched:src.length,score:r.inliers/Math.max(1,total)}; }
+  return result;
+}
 const CTW=480, CTH=270;
 class CamTracker{
   constructor(el){ this.el=el; this.cv=document.createElement('canvas'); this.cv.width=CTW; this.cv.height=CTH; this.g=this.cv.getContext('2d',{willReadFrequently:true}); this.prev=new jsfeat.pyramid_t(4); this.prev.allocate(CTW,CTH,jsfeat.U8_t|jsfeat.C1_t); this.cur=new jsfeat.pyramid_t(4); this.cur.allocate(CTW,CTH,jsfeat.U8_t|jsfeat.C1_t); this.buf=[]; for(let i=0;i<CTW*CTH;i++) this.buf[i]=new jsfeat.keypoint_t(0,0,0,0); this.kernel=new jsfeat.motion_model.homography2d(); this.rp=new jsfeat.ransac_params_t(4,2.5,0.5,0.99); this.pts=[]; this.A=[1,0,0,0,1,0,0,0,1]; this.anchor=null; }
   gray(m){ this.g.drawImage(this.el,0,0,CTW,CTH); const d=this.g.getImageData(0,0,CTW,CTH); jsfeat.imgproc.grayscale(d.data,CTW,CTH,m); }
   detect(img){ jsfeat.fast_corners.set_threshold(20); const n=jsfeat.fast_corners.detect(img,this.buf,5); const pts=[]; for(let i=0;i<n;i++){ const c=this.buf[i]; if(c.y<CTH*0.12) continue; pts.push({x:c.x,y:c.y,score:c.score}); } pts.sort((a,b)=>b.score-a.score); const out=[]; for(const p of pts){ if(out.every(q=>Math.hypot(q.x-p.x,q.y-p.y)>10)) out.push({x:p.x,y:p.y}); if(out.length>=250) break; } return out; }
   reset(anchor){ this.anchor=anchor; this.A=[1,0,0,0,1,0,0,0,1]; this.gray(this.prev.data[0]); this.prev.build(this.prev.data[0],true); this.pts=this.detect(this.prev.data[0]); }
+  rebase(Hnow){ this.anchor={H:Hnow}; this.A=[1,0,0,0,1,0,0,0,1]; }
   step(){ this.gray(this.cur.data[0]); this.cur.build(this.cur.data[0],true); const n=this.pts.length; const px=new Float32Array(n*2), cx=new Float32Array(n*2), st=new Uint8Array(n); this.pts.forEach((p,i)=>{px[i*2]=p.x;px[i*2+1]=p.y;}); if(n) jsfeat.optical_flow_lk.track(this.prev,this.cur,px,cx,n,15,30,st,0.01,0.001); const from=[],to=[]; for(let i=0;i<n;i++){ if(!st[i]) continue; from.push({x:px[i*2],y:px[i*2+1]}); to.push({x:cx[i*2],y:cx[i*2+1]}); }
     let ok=false,inl=0; const Hm=new jsfeat.matrix_t(3,3,jsfeat.F32_t|jsfeat.C1_t); const mask=new jsfeat.matrix_t(Math.max(1,from.length),1,jsfeat.U8_t|jsfeat.C1_t); if(from.length>=12){ ok=jsfeat.motion_estimator.ransac(this.rp,this.kernel,from,to,from.length,Hm,mask,600); for(let i=0;i<from.length;i++) inl+=mask.data[i]; }
     if(ok&&inl>=12){ this.A=mul9(Array.from(Hm.data),this.A); this.pts=[]; for(let i=0;i<from.length;i++) if(mask.data[i]) this.pts.push(to[i]); } else { this.pts=to; inl=-1; }
@@ -1185,6 +1214,8 @@ class CamTracker{
   H(){ if(!this.anchor||!this.anchor.H) return null; const A=[[this.A[0],this.A[1],this.A[2]],[this.A[3],this.A[4],this.A[5]],[this.A[6],this.A[7],this.A[8]]]; const Ai=mat3inv(A); if(!Ai) return null; const N=[[CTW,0,0],[0,CTH,0],[0,0,1]], Ni=[[1/CTW,0,0],[0,1/CTH,0],[0,0,1]]; return mat3mul(mat3mul(mat3mul(this.anchor.H,Ni),Ai),N); }
 }
 const I3=[[1,0,0],[0,1,0],[0,0,1]];
+// mean image displacement (px at 960 wide) of in-frame court sample points between two homographies
+function hShiftPx(Ha,Hb){ const A=mat3inv(Ha), B=mat3inv(Hb); if(!A||!B) return Infinity; let n=0,sum=0; for(let i=0;i<RF_SAMPLES.length;i+=4){ const sp=RF_SAMPLES[i]; const p=applyH(A,sp.x,sp.y), q=applyH(B,sp.x,sp.y); if(!p||!q||p[2]<=0||q[2]<=0) continue; if(p[0]<0||p[0]>1||p[1]<0||p[1]>1) continue; sum+=Math.hypot((p[0]-q[0])*RFW,(p[1]-q[1])*RFH); n++; } return n?sum/n:Infinity; }
 function lerpMat(D,u){ return D.map((row,i)=>row.map((v,j)=>I3[i][j]+(v-I3[i][j])*u)); }
 function explainErr(e){ const m=(e&&e.message)||String(e); if(/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'AIモデル（人物検出）のダウンロードに失敗しました。このネットワークでは storage.googleapis.com への接続が遮断されている可能性があります。別のネットワーク（スマホのテザリングなど）で再度お試しください。'; if(/WebGL|shader|texture|GPU/i.test(m)) return 'GPU（WebGL）でエラーが起きました。ブラウザのタブを閉じて開き直すか、他の重いタブを閉じてから再度お試しください。'; if(/jsfeat|カメラ追跡/.test(m)) return 'カメラ追跡ライブラリ（cdnjs.cloudflare.com）を読み込めませんでした。ネットワークをご確認ください。'; return '自動解析でエラーが発生しました。'; }
 async function runScan(a,b){ try{ return await runScanInner(a,b); }catch(e){ console.error(e); stopTracking(); $('#autoAllBtn').disabled=false; $('#scanBtn').disabled=false; const msg=explainErr(e)+'（詳細: '+((e&&e.message)||e)+'）'; $('#scanNote').textContent=msg; toast(msg,9000); } }
@@ -1203,7 +1234,7 @@ async function runScanInner(a,b){
   const frames=[], tracks=[], Hs=[], segs=[]; let active=[], nextId=1; const t0=performance.now(); const startT=now();
   await S.source.seekAsync(a);
   const tracker=new CamTracker(el); let ai=0; for(let i=0;i<anchors.length;i++) if(anchors[i].t<=a+1e-3) ai=i; tracker.reset(anchors[ai]); let segStart=a;
-  let lastT=-1, lastDet=-1e9, lastRec=-1e9, detBusy=false, lostFrames=0, frameCount=0;
+  let lastT=-1, lastDet=-1e9, lastRec=-1e9, detBusy=false, lostFrames=0, frameCount=0, lastRefine=-1e9, refineOk=0, refineMiss=0; const useLines=$('#useLines').checked;
   const ingest=(t,dets,Hc,balls)=>{
     const kept=[]; for(const d of dets){ const fu=d.u+d.w/2, fv=d.v+d.h; const q=applyH(Hc,fu,fv); if(!q||q[2]<=0) continue; if(q[0]<-3||q[0]>C.L+3||q[1]<-3||q[1]>C.W+3) continue; d.fu=fu; d.fv=fv; d.x=clamp(q[0],-1,C.L+1); d.y=clamp(q[1],-1,C.W+1); d.col=sampleColor(el,d,W,H); kept.push(d); }
     const cand=[]; kept.forEach((d,di)=>{ active.forEach((tr,ti)=>{ const dist=Math.hypot(d.x-tr.x,d.y-tr.y); if(dist<2.2*Math.max(1,dtDet/0.5)) cand.push([dist,di,ti]); }); });
@@ -1218,7 +1249,9 @@ async function runScanInner(a,b){
   await new Promise(resolve=>{ const timer=setInterval(()=>{ try{
       const ct=el.currentTime; if(trackAbort||ct>=b||el.ended){ clearInterval(timer); resolve(); return; } if(el.paused){ el.play().catch(()=>{}); return; } if(ct===lastT) return; lastT=ct; frameCount++;
       while(ai+1<anchors.length && anchors[ai+1].t<=ct+1e-3){ const next=anchors[ai+1]; const Ht=tracker.H(); if(Ht){ const Hi=mat3inv(Ht); if(Hi) segs.push({t0:segStart,t1:next.t,D:mat3mul(next.H,Hi)}); } ai++; tracker.reset(next); segStart=next.t; }
-      const inl=tracker.step(); if(inl<0) lostFrames++; const Ht=tracker.H(); if(!Ht) return; S.liveH={id:'live',t:ct,pts:{},H:Ht,Hi:mat3inv(Ht),scan:true,inl}; S.liveInl=inl;
+      const inl=tracker.step(); if(inl<0) lostFrames++; let Ht=tracker.H(); if(!Ht) return;
+      if(useLines && ct-lastRefine>=0.2){ lastRefine=ct; try{ const rf=refineToLines(el,Ht,{radii:[10,5]}); const shift=rf?hShiftPx(Ht,rf.H):Infinity; if(rf&&rf.inliers>=40&&rf.score>=0.45&&shift<8){ tracker.rebase(rf.H); Ht=rf.H; refineOk++; S.liveRefine=rf; } else { refineMiss++; S.liveRefine=rf?{...rf,rejected:true}:null; } }catch(e){ console.warn(e); } }
+      S.liveH={id:'live',t:ct,pts:{},H:Ht,Hi:mat3inv(Ht),scan:true,inl}; S.liveInl=inl;
       if(ct-lastRec>=0.2){ lastRec=ct; Hs.push({t:ct,H:Ht,inl}); }
       if(ct-lastDet>=dtDet && !detBusy){ lastDet=ct; detBusy=true; const tt=ct, Hc=Ht; const pr = which==='yolo' ? detectFrame(el,W,H) : detector.detect(el,80,0.3).then(res=>({persons:res.filter(r=>r.class==='person').map(r=>({u:r.bbox[0]/W,v:r.bbox[1]/H,w:r.bbox[2]/W,h:r.bbox[3]/H,score:r.score})),balls:[]})); pr.then(r=>{ ingest(tt,r.persons,Hc,r.balls); }).catch(e=>console.warn(e)).finally(()=>{ detBusy=false; }); }
       if(frameCount%15===0){ const done=(ct-a)/(b-a); const el2=(performance.now()-t0)/1000; const eta=done>0.02?Math.round(el2/done-el2):null; $('#scanNote').innerHTML=`<span class="progress">解析中 ${fmt(ct)} / ${fmt(b)}（${Math.round(done*100)}%${eta!=null?'、残り約'+Math.max(1,Math.ceil(eta/60))+'分':''}） 追跡点 ${Math.max(0,inl)} ・ 検出 ${frames.length}回</span>`; }
@@ -1250,7 +1283,7 @@ async function runScanInner(a,b){
   const badTxt=bad.length?` 追跡が不安定だった時間帯: ${bad.slice(0,8).map(x=>fmt(x.a)+'〜'+fmt(x.b)).join(', ')}${bad.length>8?' ほか':''}（タイムライン上部の赤印。この付近に位置合わせを追加して再解析すると改善します）`:' カメラ追跡は全区間で安定していました。';
   const errTxt=(segErr.length?' アンカー間のズレ補正量: '+segErr.map(e=>`${fmt(e.t0)}〜${fmt(e.t1)} ${e.err!=null?e.err.toFixed(1)+'m':'?'}`).join(' / ')+'（2mを超える区間は途中に位置合わせを足すと改善します）':' アンカーが1つだけなので、ズレは時間とともに積み重なります。カメラが動く映像では1分ごとに位置合わせを追加してください。')+badTxt;
   if(!good.length){ $('#scanNote').textContent='解析は終わりましたが、コート上に人物を検出できませんでした。位置合わせが合っているか（緑の線がコートに重なるか）、映像に選手が十分な大きさで映っているかを確認してください。'; toast('人物を検出できませんでした',5000); renderRoster(); return; }
-  $('#scanNote').textContent=`解析完了（${((performance.now()-t0)/1000/60).toFixed(1)}分、検出 ${which==='yolo'?'YOLOv10n':'COCO-SSD'}、人の動き ${good.length} 本、ボール検出 ${ballKeep.length} 回、カメラ追跡の失敗 ${lostFrames}/${frameCount} フレーム）。ボードに自動コマが出ています。チームの色分けが逆なら下で入れ替えてください。`+errTxt;
+  $('#scanNote').textContent=`解析完了（${((performance.now()-t0)/1000/60).toFixed(1)}分、検出 ${which==='yolo'?'YOLOv10n':'COCO-SSD'}、人の動き ${good.length} 本、ボール検出 ${ballKeep.length} 回、カメラ追跡の失敗 ${lostFrames}/${frameCount} フレーム${useLines?`、白線への吸着 成功 ${refineOk} / 失敗 ${refineMiss}`:''}）。ボードに自動コマが出ています。チームの色分けが逆なら下で入れ替えてください。`+errTxt;
   toast('自動解析が完了しました。再生するとボードで全員が動きます。',5000); renderRoster();
 }
 $('#autoAllBtn').addEventListener('click',async()=>{ if(!S.source) return toast('先に動画を開いてください'); const d=S.source.duration||0; if(!d) return toast('動画の長さが取れません'); if(S.scan&&!(await confirmAsk('既存の解析結果を置き換えますか？'))) return; runScan(0,d); });
@@ -1430,7 +1463,7 @@ function frame(ts){
 }
 function refreshRosterStatus(){ const t=now(); $$('#roster .prow').forEach((row,i)=>{}); const rows=[...$('#roster').querySelectorAll('.prow:not(.ballrow)')]; const ps=[...P().players.filter(p=>p.team==='A'),...P().players.filter(p=>p.team==='B')]; rows.forEach((row,i)=>{ const p=ps[i]; if(!p) return; const st=row.querySelector('.st'); const pos=playerPos(p,t); const cls=pos?'vis':p.kfs.length?'hid':''; st.className='st '+cls; st.textContent=pos?'表示中':p.kfs.length?'画面外':'未入力'; const cv=coverage(p.kfs); row.querySelector('.kfc').textContent=cv!=null?Math.round(cv*100)+'%':p.kfs.length+'KF'; if(cv!=null){ row.style.background=`linear-gradient(90deg, rgba(58,157,93,.18) ${Math.round(cv*100)}%, transparent ${Math.round(cv*100)}%)`; row.classList.toggle('done',cv>=0.9); } }); const br=$('#roster .ballrow'); if(br){ const bp=ballPos(t); const st=br.querySelector('.st'); st.className='st '+(bp?'vis':P().ball.kfs.length?'hid':''); st.textContent='ボール '+(bp?'':P().ball.kfs.length?'(非表示)':'(未入力)'); br.querySelector('.kfc').textContent=P().ball.kfs.length+'KF'; } }
 renderRoster(); renderCalibList(); applySettingsUI(); setVMode('track'); renderStats();
-if(new URLSearchParams(location.search).has('debug')) window.__ct={S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,LM,LANDMARKS,C,COURT_PATHS,ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
+if(new URLSearchParams(location.search).has('debug')) window.__ct={refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,LM,LANDMARKS,C,COURT_PATHS,ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
 { const q=new URLSearchParams(location.search).get('src'); if(q){ S.project=newProject(); S.project.name=q.split('/').pop(); mount(new VideoSource(q)); renderRoster(); renderCalibList(); } }
 requestAnimationFrame(frame);
 })();

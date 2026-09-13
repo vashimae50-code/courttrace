@@ -246,9 +246,10 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
           <button class="btn sm danger" id="delCalibBtn">削除</button>
         </div>
         <button class="btn" id="goTrackBtn" hidden style="margin:6px 0;width:100%">✓ 位置合わせOK → 追跡に進む</button>
-        <div class="field"><label>目印</label><select id="lmSel" style="width:160px"></select></div>
+        <div class="field"><label>選択中の点</label><select id="lmSel" style="width:160px"></select></div>
+        <div class="actions"><button class="btn sm" id="undoPtBtn">最後の点を取り消す</button><button class="btn sm" id="clearPtsBtn">点を全消去</button></div>
         <div class="calib-pts" id="calibList"></div>
-        <p class="note" id="calibNote">コートの目印を4点以上、動画上でクリックしてください。合うと動画にコートの線が重なります。</p>
+        <p class="note" id="calibNote">① 右のボード（コート図）で線の交点をクリック → ② 動画の同じ場所をクリック。これを4〜6回。半面しか映っていないときはボードの片側だけを使います。</p>
       </section>
 
       <section>
@@ -471,8 +472,10 @@ function recomputeCalib(c){
   for(const id of ids){ const l=LM[id]; if(!l) continue; src.push(c.pts[id]); dst.push([l.x,l.y]); }
   c.H = src.length>=4 ? computeHomography(src,dst) : null;
   c.Hi = c.H ? mat3inv(c.H) : null;
-  if(c.H){ // reprojection error in normalized image units
-    let e=0; for(let i=0;i<src.length;i++){ const q=applyH(c.Hi,dst[i][0],dst[i][1]); if(q) e+=Math.hypot(q[0]-src[i][0],q[1]-src[i][1]); } c.err=e/src.length;
+  c.errs={}; c.bad={};
+  if(c.H){ // reprojection error in normalized image units, per point
+    let e=0; const list=[]; ids.forEach((id,i)=>{ if(!LM[id]) return; const q=applyH(c.Hi,dst[i][0],dst[i][1]); const d=q?Math.hypot(q[0]-src[i][0],q[1]-src[i][1]):1; c.errs[id]=d; list.push(d); e+=d; }); c.err=e/src.length;
+    if(list.length>=5){ const med=list.slice().sort((a,b)=>a-b)[Math.floor(list.length/2)]; for(const id in c.errs) if(c.errs[id]>Math.max(0.012,2.5*med)) c.bad[id]=true; }
   } else c.err=null;
 }
 function imgToCourt(u,v,t){ const c=calibAt(t); if(!c||!c.H) return null; const r=applyH(c.H,u,v); return r?[r[0],r[1]]:null; }
@@ -677,7 +680,11 @@ function drawBoard(){
   // trails
   if(st.trails){ for(const p of P().players){ if(!playerPos(p,t)) continue; g.beginPath(); let started=false; for(let tt=t-2.5;tt<=t;tt+=0.1){ const q=playerPos(p,tt); if(!q){started=false;continue;} const px=toPx(...q); started?g.lineTo(...px):g.moveTo(...px); started=true; } g.strokeStyle=P().teams[p.team].color+'88'; g.lineWidth=Math.max(1.5,0.08*s); g.stroke(); } }
   // landmarks while calibrating
-  if(S.vmode==='calib'){ const c=calibAt(t); for(const l of LANDMARKS){ const [px,py]=toPx(l.x,l.y); const placed=c&&c.pts[l.id]; const cur=l.id===S.lm; g.beginPath(); g.arc(px,py,cur?7:4,0,Math.PI*2); g.fillStyle=cur?accent:(placed?cssVar('--ok'):'rgba(0,0,0,.35)'); g.fill(); if(cur){ g.strokeStyle='#fff'; g.lineWidth=2; g.stroke(); } } }
+  if(S.vmode==='calib'){ const c=calibAt(t); g.fillStyle='rgba(0,0,0,.18)'; g.fillRect(cx0,cy0,C.L*s,C.W*s);
+    for(const l of LANDMARKS){ const [px,py]=toPx(l.x,l.y); const placed=c&&c.pts[l.id]; const cur=l.id===S.lm; const bad=c&&c.bad&&c.bad[l.id]; const r=cur?Math.max(8,0.45*s):Math.max(5,0.28*s);
+      g.beginPath(); g.arc(px,py,r,0,Math.PI*2); g.fillStyle=cur?accent:bad?cssVar('--bad'):placed?cssVar('--ok'):'rgba(255,255,255,.92)'; g.fill(); g.lineWidth=cur?3:1.5; g.strokeStyle=cur?'#fff':'rgba(0,0,0,.55)'; g.stroke();
+      if(placed&&!cur){ g.fillStyle='#fff'; g.font=`700 ${Math.max(9,r*1.3)}px "Barlow Condensed",sans-serif`; g.textAlign='center'; g.textBaseline='middle'; g.fillText('✓',px,py+0.5); } }
+    if(S.lm&&LM[S.lm]){ const [px,py]=toPx(LM[S.lm].x,LM[S.lm].y); g.font='600 13px "Noto Sans JP",sans-serif'; g.textAlign='center'; g.textBaseline='bottom'; const txt=LM[S.lm].name+' → 動画でクリック'; const w=g.measureText(txt).width+14; g.fillStyle='rgba(20,15,5,.85)'; g.beginPath(); g.roundRect(px-w/2,py-Math.max(14,0.6*s)-22,w,22,6); g.fill(); g.fillStyle='#fff'; g.fillText(txt,px,py-Math.max(14,0.6*s)-4); } }
   // pieces
   const R=0.55*s;
   for(const p of P().players){ const q=playerPos(p,t); if(!q) continue; const [px,py]=toPx(...q); const col=P().teams[p.team].color;
@@ -733,7 +740,7 @@ function drawOverlay(){
   if(c&&c.Hi&&P().settings.showProj){ g.strokeStyle= S.vmode==='calib' ? 'rgba(80,220,120,.9)' : 'rgba(255,255,255,.35)'; g.lineWidth=1.5; g.lineJoin='round';
     for(const path of COURT_PATHS){ g.beginPath(); let pen=false; for(const p of path){ const q=applyH(c.Hi,p[0],p[1]); if(!q||q[2]<=0||Math.abs(q[0])>3||Math.abs(q[1])>3){pen=false;continue;} const px=I(q[0],q[1]); pen?g.lineTo(...px):g.moveTo(...px); pen=true; } g.stroke(); } }
   if(S.vmode==='calib'){
-    if(c) for(const id in c.pts){ const [px,py]=I(...c.pts[id]); const cur=id===S.lm; g.beginPath(); g.arc(px,py,cur?7:5,0,Math.PI*2); g.fillStyle=cur?'#e8b04a':'#4fd07a'; g.fill(); g.strokeStyle='#000'; g.lineWidth=1.5; g.stroke(); g.fillStyle='#fff'; g.font='11px "Noto Sans JP",sans-serif'; g.textAlign='left'; g.shadowColor='#000'; g.shadowBlur=3; g.fillText(LM[id].name,px+9,py-8); g.shadowBlur=0; }
+    if(c) for(const id in c.pts){ const [px,py]=I(...c.pts[id]); const cur=id===S.lm; const bad=c.bad&&c.bad[id]; g.beginPath(); g.arc(px,py,cur?8:6,0,Math.PI*2); g.fillStyle=cur?'#e8b04a':bad?'#e0463c':'#4fd07a'; g.fill(); g.strokeStyle='#000'; g.lineWidth=1.5; g.stroke(); g.fillStyle='#fff'; g.font='11px "Noto Sans JP",sans-serif'; g.textAlign='left'; g.shadowColor='#000'; g.shadowBlur=3; g.fillText(LM[id].name,px+9,py-8); g.shadowBlur=0; }
     return;
   }
   // detections
@@ -799,21 +806,27 @@ $('#delKfBtn').addEventListener('click',()=>{ if(!S.selected) return; if(removeK
 $('#clearKfBtn').addEventListener('click',()=>{ if(!S.selected) return; const e=entity(S.selected); if(!e.kfs.length) return; if(!confirm('選択中のキーフレームをすべて削除しますか？')) return; e.kfs=[]; scheduleSave(); renderRoster(); });
 
 // ───────────────────────── calibration UI
-const lmSel=$('#lmSel'); LANDMARKS.forEach(l=>{ const o=document.createElement('option'); o.value=l.id; o.textContent=l.name; lmSel.appendChild(o); });
-lmSel.addEventListener('change',()=>{ S.lm=lmSel.value; renderCalibList(); });
-function nextUnplaced(c){ const cur=LANDMARKS.findIndex(l=>l.id===S.lm); for(let k=1;k<=LANDMARKS.length;k++){ const l=LANDMARKS[(cur+k)%LANDMARKS.length]; if(!c.pts[l.id]) return l.id; } return S.lm; }
+const lmSel=$('#lmSel'); { const o=document.createElement('option'); o.value=''; o.textContent='（ボードで点をクリック）'; lmSel.appendChild(o); } LANDMARKS.forEach(l=>{ const o=document.createElement('option'); o.value=l.id; o.textContent=l.name; lmSel.appendChild(o); });
+lmSel.addEventListener('change',()=>{ S.lm=lmSel.value||null; renderCalibList(); });
+S.lm=null; S.ptOrder=[];
+function nearestLandmark(x,y,r=1.1){ let best=null,bd=r; for(const l of LANDMARKS){ const d=Math.hypot(l.x-x,l.y-y); if(d<bd){bd=d;best=l.id;} } return best; }
 function renderCalibList(){
-  const c=calibAt(now()); const host=$('#calibList'); host.innerHTML=''; lmSel.value=S.lm;
+  const c=calibAt(now()); const host=$('#calibList'); host.innerHTML=''; lmSel.value=S.lm||'';
   const n=c?Object.keys(c.pts).length:0;
-  $('#calibNote').textContent = !c||n<4 ? `目印を4点以上、動画上でクリックしてください（現在 ${n} 点）。合うと動画にコートの線が重なります。` : c.H ? `位置合わせ済み（${n}点、時刻 ${fmt(c.t)} から有効、誤差 ${(c.err*100).toFixed(2)}%）。ずれていれば点をドラッグして直せます。` : 'この組み合わせでは計算できません。同じ直線上（例: ベースライン上だけ）の点では決まらないので、FTラインの端や3Pアークの頂点など奥行きの違う点を追加してください';
+  const badN=c?Object.keys(c.bad||{}).length:0;
+  $('#calibNote').textContent = !c||n<4 ? `① ボードで点をクリック → ② 動画の同じ場所をクリック（現在 ${n} 点、4点以上で完了）。半面しか映っていなければボードの片側だけを使ってください。` : !c.H ? 'この組み合わせでは計算できません。同じ直線上（例: ベースライン上だけ）の点では決まらないので、FTラインの端や3Pアークの頂点など奥行きの違う点を追加してください。' : badN ? `赤い点（${badN}個）が他と合っていません。動画上でドラッグして直すか、一覧の×で削除してください。` : c.err>0.02 ? `ずれが大きめです（誤差 ${(c.err*100).toFixed(1)}%）。緑の線が合っていなければ、点を置き直してください。` : `位置合わせ済み（${n}点、時刻 ${fmt(c.t)} から有効、誤差 ${(c.err*100).toFixed(2)}%）。ずれていれば点をドラッグして直せます。`;
   if(!c){ $('#goTrackBtn').hidden=true; return; }
-  for(const l of LANDMARKS){ const d=document.createElement('div'); if(l.id===S.lm) d.classList.add('cur'); const has=!!c.pts[l.id]; d.innerHTML=`<b>${l.name}</b><span class="${has?'ok':'none'}">${has?'✓':'－'}</span>`; d.addEventListener('click',()=>{ S.lm=l.id; renderCalibList(); }); host.appendChild(d); }
+  const placed=LANDMARKS.filter(l=>c.pts[l.id]);
+  if(!placed.length){ const d=document.createElement('div'); d.innerHTML='<span class="none">まだ点がありません</span>'; host.appendChild(d); }
+  for(const l of placed){ const d=document.createElement('div'); if(l.id===S.lm) d.classList.add('cur'); const bad=c.bad&&c.bad[l.id]; d.innerHTML=`<b>${l.name}</b><span>${bad?'<span style="color:var(--bad)">ずれ大</span> ':''}<button class="x" style="border:0;background:none;color:var(--muted);cursor:pointer" title="この点を削除">×</button></span>`; d.addEventListener('click',e=>{ if(e.target.closest('button')) return; S.lm=l.id; renderCalibList(); }); d.querySelector('button').addEventListener('click',()=>{ delete c.pts[l.id]; S.ptOrder=S.ptOrder.filter(x=>x!==l.id); recomputeCalib(c); scheduleSave(); renderCalibList(); }); host.appendChild(d); }
   $('#goTrackBtn').hidden = !(c.H && S.vmode==='calib');
   const calibs=P().calibs.length; $('#delCalibBtn').textContent = calibs>1 ? `削除（${calibs}件中）` : '削除';
 }
 $('#calibModeBtn').addEventListener('click',()=>setVMode('calib'));
 $('#goTrackBtn').addEventListener('click',()=>{ setVMode('track'); toast('名簿で選手を選び、動画上でその選手の足元をクリックしてください（一時停止中に）',6000); });
-$('#newCalibBtn').addEventListener('click',()=>{ const t=now(); if(P().calibs.some(c=>Math.abs(c.t-t)<0.05)) return toast('同じ時刻に既に位置合わせがあります'); const prev=calibAt(t); const c={id:uid(),t,pts:prev?JSON.parse(JSON.stringify(prev.pts)):{},H:null,Hi:null}; recomputeCalib(c); P().calibs.push(c); P().calibs.sort((a,b)=>a.t-b.t); scheduleSave(); setVMode('calib'); toast('この時刻からの位置合わせを追加しました。前の点を引き継いでいるので、ずれた点をドラッグで直してください。',5000); renderCalibList(); });
+$('#newCalibBtn').addEventListener('click',()=>{ const t=now(); if(P().calibs.some(c=>Math.abs(c.t-t)<0.05)) return toast('同じ時刻に既に位置合わせがあります'); const c={id:uid(),t,pts:{},H:null,Hi:null}; recomputeCalib(c); P().calibs.push(c); P().calibs.sort((a,b)=>a.t-b.t); S.lm=null; S.ptOrder=[]; scheduleSave(); setVMode('calib'); toast('この時刻からの位置合わせを新しく始めます。ボードで点を選び、動画の同じ場所をクリックしてください。',5000); renderCalibList(); });
+$('#undoPtBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c) return; const id=S.ptOrder.pop()||Object.keys(c.pts).pop(); if(!id) return; delete c.pts[id]; recomputeCalib(c); S.lm=id; scheduleSave(); renderCalibList(); toast('「'+LM[id].name+'」を取り消しました'); });
+$('#clearPtsBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c||!Object.keys(c.pts).length) return; if(!confirm('この位置合わせの点をすべて消しますか？')) return; c.pts={}; S.ptOrder=[]; S.lm=null; recomputeCalib(c); scheduleSave(); renderCalibList(); });
 $('#delCalibBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c) return; P().calibs=P().calibs.filter(k=>k!==c); scheduleSave(); renderCalibList(); toast('位置合わせを削除しました'); });
 function setVMode(m){ S.vmode=m; $$('[data-vmode]').forEach(b=>b.classList.toggle('on',b.dataset.vmode===m)); $('#calibModeBtn').classList.toggle('on',m==='calib'); renderCalibList(); }
 $$('[data-vmode]').forEach(b=>b.addEventListener('click',()=>setVMode(b.dataset.vmode)));
@@ -826,8 +839,11 @@ ov.addEventListener('pointerdown',e=>{
     const c=ensureCalib(t);
     for(const id in c.pts){ const [x,y]=[pt.r.x+c.pts[id][0]*pt.r.w, pt.r.y+c.pts[id][1]*pt.r.h]; if(Math.hypot(x-pt.px,y-pt.py)<10){ S.calibDrag={c,id}; ov.setPointerCapture(e.pointerId); S.lm=id; renderCalibList(); return; } }
     if(pt.u<0||pt.u>1||pt.v<0||pt.v>1) return;
-    c.pts[S.lm]=[pt.u,pt.v]; recomputeCalib(c); scheduleSave(); S.lm=nextUnplaced(c); renderCalibList();
-    if(Object.keys(c.pts).length===4 && c.H) toast('4点そろいました。緑のコート線が映像に合っていれば成功です。');
+    if(!S.lm){ toast('先に右のボード（コート図）で、置きたい点をクリックしてください',3500); return; }
+    c.pts[S.lm]=[pt.u,pt.v]; S.ptOrder=S.ptOrder.filter(x=>x!==S.lm).concat(S.lm); recomputeCalib(c); scheduleSave(); const placedName=LM[S.lm].name; S.lm=null; renderCalibList();
+    const n=Object.keys(c.pts).length;
+    if(n<4) toast(`「${placedName}」を置きました（${n}/4）。次の点をボードで選んでください`,3000);
+    else if(c.H) toast(n===4?'4点そろいました。緑の線が映像のコートに合っていれば「追跡に進む」。ずれていれば点を足すか直してください。':'点を追加しました。緑の線の合い方を確認してください。',4000);
     return;
   }
   if(!S.selected) return toast('先に名簿から選手かボールを選んでください');
@@ -854,6 +870,7 @@ function strokeNear(x,y){ const tol=0.45; for(let i=P().strokes.length-1;i>=0;i-
 function distSeg(p,a,b){ const dx=b[0]-a[0],dy=b[1]-a[1]; const l2=dx*dx+dy*dy||1e-9; const u=clamp(((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l2,0,1); return Math.hypot(p[0]-a[0]-u*dx,p[1]-a[1]-u*dy); }
 board.addEventListener('pointerdown',e=>{
   const pt=boardPoint(e), t=now(); board.setPointerCapture(e.pointerId);
+  if(S.vmode==='calib'){ const id=nearestLandmark(pt.x,pt.y); if(id){ S.lm=id; renderCalibList(); const c=calibAt(t); toast((c&&c.pts[id])?`「${LM[id].name}」は置き済みです。動画でクリックすると置き直します`:`「${LM[id].name}」を選択。動画の同じ場所をクリックしてください`,3000); } else toast('線の交点や角など、印のある場所をクリックしてください'); return; }
   if(S.pendingShot){ S.pendingShot.x=clamp(pt.x,0,C.L); S.pendingShot.y=clamp(pt.y,0,C.W); S.pendingShot=null; $('#pendMsg').hidden=true; scheduleSave(); renderStats(); toast('シュート位置を記録しました'); return; }
   if(S.tool==='select'){
     const hit=hitPiece(pt.x,pt.y,t);
@@ -901,7 +918,7 @@ $('#showProj').addEventListener('change',e=>{P().settings.showProj=e.target.chec
 
 // ───────────────────────── persistence
 function serialize(){ const pr=P(); return JSON.stringify({...pr, calibs:pr.calibs.map(c=>({id:c.id,t:c.t,pts:c.pts}))}); }
-function loadProjectData(data){ const pr={...newProject(),...data}; pr.calibs=(data.calibs||[]).map(c=>{ const k={id:c.id||uid(),t:c.t||0,pts:c.pts||{}}; recomputeCalib(k); return k; }); pr.settings={...newProject().settings,...(data.settings||{})}; pr.events=(data.events||[]); S.project=pr; S.selected=null; renderRoster(); renderCalibList(); applySettingsUI(); renderStats();
+function loadProjectData(data){ const pr={...newProject(),...data}; pr.calibs=(data.calibs||[]).map(c=>{ const k={id:c.id||uid(),t:c.t||0,pts:c.pts||{}}; recomputeCalib(k); return k; }); pr.settings={...newProject().settings,...(data.settings||{})}; pr.events=(data.events||[]); S.project=pr; S.selected=null; S.lm=null; S.ptOrder=[]; renderRoster(); renderCalibList(); applySettingsUI(); renderStats();
   if(pr.source&&pr.source.type==='youtube' && !(S.source&&S.source.kind==='youtube'&&S.source.id===pr.source.id)){ $('#ytUrl').value='https://www.youtube.com/watch?v='+pr.source.id; openYouTube(pr.source.id,0,true); } }
 let saveTimer; function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ try{ if(S.source&&(S.source.kind==='video'||S.source.kind==='youtube')) localStorage.setItem('courttrace:'+S.source.key, serialize()); }catch(e){} },600); }
 function loadAutosave(name){ try{ const s=localStorage.getItem('courttrace:'+name); if(s){ loadProjectData(JSON.parse(s)); toast('前回の作業内容を復元しました（'+name+'）'); } }catch(e){} }
@@ -1029,8 +1046,9 @@ function guideState(){
   if(!S.source) return {n:1,text:'試合の動画を読み込みます。「動画を開く」で手元のファイル、「YouTubeを開く」で共有されたURL。初めての方は「デモ映像で試す」で流れを確認するのがおすすめです。',action:['デモ映像で試す',()=>$('#demoBtn').click()]};
   const c=calibAt(now()); const n=c?Object.keys(c.pts).length:0;
   if(!c||!c.H){
-    if(S.vmode!=='calib') return {n:2,text:'カメラの向きをコートに合わせます。「目印を置く」を押してから、動画に映っているコートの目印（コーナー、FTラインの端、3Pアークの頂点など）を4点以上クリックします。',action:['目印を置く',()=>setVMode('calib')]};
-    const lm=LM[S.lm]; return {n:2,text:`いま選ばれている目印「${lm?lm.name:''}」を、動画の中でクリックしてください（現在 ${n} 点、4点以上で完了）。ボード上のオレンジの点が、その目印の場所です。映っていない目印は左の一覧から別のものを選べます。`};
+    if(S.vmode!=='calib') return {n:2,text:'カメラの向きをコートに合わせます。「目印を置く」を押すと、ボード（コート図）に白い点が出ます。ボードの点をクリック → 動画の同じ場所をクリック、を4〜6回くり返します。',action:['目印を置く',()=>setVMode('calib')]};
+    if(S.lm&&LM[S.lm]) return {n:2,text:`「${LM[S.lm].name}」を選択中です。動画の中で同じ場所をクリックしてください（現在 ${n} 点、4点以上で完了）。違う点を選び直すにはボードの別の点をクリック。`};
+    return {n:2,text:`ボード（コート図）の白い点から、動画に映っている場所を1つクリックしてください（現在 ${n} 点、4点以上で完了）。コーナー、FTラインの端、3Pアークの頂点など、奥行きの違う点を混ぜると精度が上がります。半面しか映っていないときはボードの片側の点だけを使います。`};
   }
   if(S.vmode==='calib') return {n:2,text:'緑の線が映像のコートの線と重なっていれば成功です。ずれていれば点をドラッグして直してください。合ったら追跡に進みます。',action:['追跡に進む',()=>$('#goTrackBtn').click()]};
   if(S.selected && !entity(S.selected)) S.selected=null;

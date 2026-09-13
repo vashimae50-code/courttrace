@@ -159,6 +159,11 @@ aside h3 .hint{margin-left:auto;letter-spacing:0;text-transform:none;font-size:1
 .color.on{box-shadow:0 0 0 2px var(--ink)}
 footer.tl{border-top:1px solid var(--line);background:var(--panel);grid-column:1/-1}
 footer.tl canvas{display:block;width:100%;touch-action:none}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:20}
+.mbox{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:18px 20px;max-width:440px;width:calc(100% - 40px);box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.mbox p{margin:0 0 14px;white-space:pre-wrap;line-height:1.6}
+.mbtns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.mbtns .btn.go{background:var(--accent);border-color:var(--accent);color:#1c1408;font-weight:600}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;opacity:0;transition:.2s;pointer-events:none;z-index:9;max-width:80vw}
 .toast.show{opacity:1;transform:translateX(-50%)}
 .kbd{font-family:'IBM Plex Mono',monospace;font-size:11px;border:1px solid var(--line);border-radius:3px;padding:0 4px;color:var(--muted)}
@@ -365,6 +370,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
   <footer class="tl"><canvas id="tl"></canvas></footer>
 </div>
 <div class="toast" id="toast"></div>
+<div class="modal" id="modal" hidden><div class="mbox"><p id="mText"></p><div class="mbtns" id="mBtns"></div></div></div>
 
 <script>
 (() => {
@@ -380,6 +386,9 @@ const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(
 let toastTimer;
 function toast(msg, ms=2800){ const el=$('#toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'), ms); }
 const FPS = 30;
+// In-app confirmation: the browser's own dialog can be permanently suppressed by the user, which made buttons look dead.
+function ask(text, buttons){ return new Promise(res=>{ const m=$('#modal'), bt=$('#mBtns'); $('#mText').textContent=text; bt.innerHTML=''; (buttons||[{label:'キャンセル',value:false},{label:'OK',value:true,primary:true}]).forEach(b=>{ const el=document.createElement('button'); el.className='btn'+(b.primary?' go':''); el.textContent=b.label; el.addEventListener('click',()=>{ m.hidden=true; res(b.value); }); bt.appendChild(el); }); m.hidden=false; const first=bt.querySelector('.go')||bt.querySelector('button'); if(first) first.focus(); }); }
+const confirmAsk=(text)=>ask(text,[{label:'キャンセル',value:false},{label:'実行する',value:true,primary:true}]);
 
 // ───────────────────────── court geometry (FIBA, meters)
 const C = { L:28, W:15, rimX:1.575, keyW:4.9, keyL:5.8, ftR:1.8, threeR:6.75, threeSide:0.9, threeStraight:2.99, ccR:1.8, raR:1.25, bbX:1.2, bbW:1.8, rimR:0.225 };
@@ -882,7 +891,7 @@ function renderRoster(){
 let rosterDirtyT=0;
 $('#hideBtn').addEventListener('click',()=>{ if(!S.selected) return toast('先に名簿から選手かボールを選んでください'); const e=entity(S.selected); const pos=entityPos(S.selected,now()); setKf(e.kfs,{t:now(),v:false,x:pos?pos[0]:null,y:pos?pos[1]:null}); toast('この時刻から画面外にしました'); renderRoster(); });
 $('#delKfBtn').addEventListener('click',()=>{ if(!S.selected) return; if(removeKfNear(entity(S.selected).kfs,now())) toast('キーフレームを削除しました'); else toast('近くにキーフレームがありません'); renderRoster(); });
-$('#clearKfBtn').addEventListener('click',()=>{ if(!S.selected) return; const e=entity(S.selected); if(!e.kfs.length) return; if(!confirm('選択中のキーフレームをすべて削除しますか？')) return; e.kfs=[]; scheduleSave(); renderRoster(); });
+$('#clearKfBtn').addEventListener('click',async()=>{ if(!S.selected) return; const e=entity(S.selected); if(!e.kfs.length) return; if(!(await confirmAsk('選択中のキーフレームをすべて削除しますか？'))) return; e.kfs=[]; scheduleSave(); renderRoster(); });
 
 // ───────────────────────── calibration UI
 const lmSel=$('#lmSel'); { const o=document.createElement('option'); o.value=''; o.textContent='（ボードで点をクリック）'; lmSel.appendChild(o); } LANDMARKS.forEach(l=>{ const o=document.createElement('option'); o.value=l.id; o.textContent=l.name; lmSel.appendChild(o); });
@@ -918,7 +927,7 @@ function wizConfirm(){ const c=wizCalib(); if(!c||!c.H||Object.keys(c.pts).lengt
 function wizStartRightShift(){ const t=now(); const left=wizCalib(); if(left&&Math.abs(left.t-t)<0.5) return toast('先に、右コートが映っている時刻まで動画を進めてください（下のタイムラインやスライダーで移動）',5000); if(P().calibs.some(k=>Math.abs(k.t-t)<0.05)) return toast('同じ時刻に既に位置合わせがあります'); const c={id:uid(),t,pts:{},H:null,Hi:null}; recomputeCalib(c); captureThumb(c); P().calibs.push(c); P().calibs.sort((a,b)=>a.t-b.t); S.viewLast=c; scheduleSave(); wizStart('R',c); toast(`${fmt(t)} から右コートの位置合わせを始めます。光っている点の場所を動画でクリックしてください。`,5000); }
 function wizStartRightSame(){ const c=wizCalib(); if(!c) return; S.wiz.phase='R'; S.wiz.skipped={}; wizNext(); renderCalibList(); }
 function wizBegin(){ const t=now(); const c=ensureCalib(t); if(S.wiz&&S.wiz.calibId===c.id&&S.wiz.phase!=='done'){ setVMode('calib'); renderCalibList(); return; } wizStart('L',c); }
-function wizReset(){ const c=wizCalib()||ensureCalib(now()); if(Object.keys(c.pts).length&&!confirm('この位置合わせの点をすべて消して、左コートからやり直しますか？')) return; c.pts={}; S.ptOrder=[]; recomputeCalib(c); scheduleSave(); wizStart('L',c); }
+async function wizReset(){ const c=wizCalib()||ensureCalib(now()); if(Object.keys(c.pts).length&&!(await confirmAsk('この位置合わせの点をすべて消して、左コートからやり直しますか？'))) return; c.pts={}; S.ptOrder=[]; recomputeCalib(c); scheduleSave(); wizStart('L',c); }
 function renderViews(cur){
   const host=$('#viewList'); host.innerHTML=''; const cs=P().calibs; if(cs.length<2){ host.hidden=true; return; } host.hidden=false;
   cs.forEach((c,i)=>{ const d=document.createElement('div'); d.className='v'+(c===cur?' on':''); const cv=document.createElement('canvas'); cv.width=32; cv.height=18; if(c.thumb){ const g=cv.getContext('2d'); const im=g.createImageData(32,18); for(let k=0;k<576;k++){ const v=clamp(128+c.thumb[k]*45,0,255); im.data[k*4]=im.data[k*4+1]=im.data[k*4+2]=v; im.data[k*4+3]=255; } g.putImageData(im,0,0); }
@@ -948,10 +957,10 @@ $('#calibModeBtn').addEventListener('click',wizBegin);
 $('#goTrackBtn').addEventListener('click',()=>{ setVMode('track'); toast('名簿で選手を選び、動画上でその選手の足元をクリックしてください（一時停止中に）',6000); });
 $('#newCalibBtn').addEventListener('click',()=>{ const t=now(); if(P().calibs.some(c=>Math.abs(c.t-t)<0.05)) return toast('同じ時刻に既に位置合わせがあります'); const c={id:uid(),t,pts:{},H:null,Hi:null}; recomputeCalib(c); captureThumb(c); P().calibs.push(c); P().calibs.sort((a,b)=>a.t-b.t); S.lm=null; S.ptOrder=[]; S.viewLast=c; scheduleSave(); setVMode('calib'); toast('新しいカメラの向き（ビュー）を追加しました。この見え方のときに使う位置合わせになります。ボードで点を選び、動画の同じ場所をクリックしてください。',6000); renderCalibList(); });
 $('#undoPtBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c) return; const id=S.ptOrder.pop()||Object.keys(c.pts).pop(); if(!id) return; delete c.pts[id]; recomputeCalib(c); S.lm=id; scheduleSave(); renderCalibList(); toast('「'+LM[id].name+'」を取り消しました'); });
-$('#clearPtsBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c||!Object.keys(c.pts).length) return; if(!confirm('この位置合わせの点をすべて消しますか？')) return; c.pts={}; S.ptOrder=[]; S.lm=null; recomputeCalib(c); scheduleSave(); renderCalibList(); });
+$('#clearPtsBtn').addEventListener('click',async()=>{ const c=calibAt(now()); if(!c||!Object.keys(c.pts).length) return; if(!(await confirmAsk('この位置合わせの点をすべて消しますか？'))) return; c.pts={}; S.ptOrder=[]; S.lm=null; recomputeCalib(c); scheduleSave(); renderCalibList(); });
 function recomputeScan(){ const sc=S.scan; if(!sc) return 0; let n=0; const byId2=Object.fromEntries(P().calibs.map(c=>[c.id,c])); const conv=(pt,t)=>{ const e=scanH(t); if(e){ const r=applyH(e.H,pt.fu,pt.fv); return r?[r[0],r[1]]:null; } const c=pt.cid&&byId2[pt.cid]; if(c&&c.H){ const r=applyH(c.H,pt.fu,pt.fv); return r?[r[0],r[1]]:null; } if(P().calibs.length===1&&P().calibs[0].H){ const r=applyH(P().calibs[0].H,pt.fu,pt.fv); return r?[r[0],r[1]]:null; } return null; };
   for(const id in sc.tracks){ const tr=sc.tracks[id]; for(const pt of tr.pts){ if(pt.fu==null) continue; const q=conv(pt,pt.t); if(q){ pt.x=clamp(q[0],-1,C.L+1); pt.y=clamp(q[1],-1,C.W+1); n++; } } } for(const fr of sc.frames) for(const d of fr.dets){ if(d.fu==null) continue; const q=conv(d,fr.t); if(q){ d.x=q[0]; d.y=q[1]; } } saveScan(); return n; }
-$('#mergeCalibBtn').addEventListener('click',()=>{ const cs=P().calibs; if(cs.length<2) return; if(!confirm(`${cs.length}件の位置合わせの点をすべて1つにまとめます（カメラが動いていない前提）。よろしいですか？`)) return; const pts={}; for(const c of cs) Object.assign(pts,c.pts); const m={id:uid(),t:0,pts,H:null,Hi:null}; recomputeCalib(m); if(!m.H) return toast('統合した点では計算できませんでした'); P().calibs=[m]; S.wiz=null; S.lm=null; scheduleSave(); renderCalibList(); const n=recomputeScan(); toast(`統合しました（${Object.keys(pts).length}点、誤差 ${(m.err*100).toFixed(2)}%）。`+(n?`解析結果 ${n} 点の位置も新しい位置合わせで計算し直しました。`:'')+'赤い点があれば置き直してください。',7000); });
+$('#mergeCalibBtn').addEventListener('click',async()=>{ const cs=P().calibs; if(cs.length<2) return; if(!(await confirmAsk(`${cs.length}件の位置合わせの点をすべて1つにまとめます（カメラが動いていない前提）。よろしいですか？`))) return; const pts={}; for(const c of cs) Object.assign(pts,c.pts); const m={id:uid(),t:0,pts,H:null,Hi:null}; recomputeCalib(m); if(!m.H) return toast('統合した点では計算できませんでした'); P().calibs=[m]; S.wiz=null; S.lm=null; scheduleSave(); renderCalibList(); const n=recomputeScan(); toast(`統合しました（${Object.keys(pts).length}点、誤差 ${(m.err*100).toFixed(2)}%）。`+(n?`解析結果 ${n} 点の位置も新しい位置合わせで計算し直しました。`:'')+'赤い点があれば置き直してください。',7000); });
 $('#delCalibBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c) return; P().calibs=P().calibs.filter(k=>k!==c); scheduleSave(); renderCalibList(); toast('位置合わせを削除しました'); });
 function setVMode(m){ S.vmode=m; $$('[data-vmode]').forEach(b=>b.classList.toggle('on',b.dataset.vmode===m)); $('#calibModeBtn').classList.toggle('on',m==='calib'); renderCalibList(); }
 $$('[data-vmode]').forEach(b=>b.addEventListener('click',()=>setVMode(b.dataset.vmode)));
@@ -1049,15 +1058,15 @@ function serialize(){ const pr=P(); return JSON.stringify({...pr, calibs:pr.cali
 function loadProjectData(data){ const pr={...newProject(),...data}; pr.calibs=(data.calibs||[]).map(c=>{ const k={id:c.id||uid(),t:c.t||0,pts:c.pts||{},thumb:(c.thumb&&c.thumb.length===576)?c.thumb:null}; recomputeCalib(k); return k; }); S.viewCache=null; S.viewLast=null; pr.settings={...newProject().settings,...(data.settings||{})}; pr.events=(data.events||[]); S.project=pr; S.selected=null; S.lm=null; S.ptOrder=[]; S.wiz=null; renderRoster(); renderCalibList(); applySettingsUI(); renderStats();
   if(pr.source&&pr.source.type==='youtube' && !(S.source&&S.source.kind==='youtube'&&S.source.id===pr.source.id)){ $('#ytUrl').value='https://www.youtube.com/watch?v='+pr.source.id; openYouTube(pr.source.id,0,true); } }
 let saveTimer; function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ try{ if(S.source&&(S.source.kind==='video'||S.source.kind==='youtube')) localStorage.setItem('courttrace:'+S.source.key, serialize()); }catch(e){} },600); }
-function loadAutosave(key){
+async function loadAutosave(key){
   let raw=null, scanRaw=null; try{ raw=localStorage.getItem('courttrace:'+key); scanRaw=localStorage.getItem('courttrace:scan:'+key); }catch(e){}
   if(!raw&&!scanRaw) return;
   let info='';
   try{ const d=JSON.parse(raw||'{}'); const kf=(d.players||[]).reduce((a,p)=>a+(p.kfs||[]).length,0); info=`位置合わせ ${(d.calibs||[]).length}件、キーフレーム ${kf}件、記録 ${(d.events||[]).length}件${scanRaw?'、自動解析の結果あり':''}`; }catch(e){}
-  const ok=confirm(`この動画には前回の作業内容があります（${info}）。
+  const ok=await ask(`この動画には前回の作業内容があります。
+（${info}）
 
-[OK] 復元して続きから始める
-[キャンセル] 前回の内容を消して、新しく始める`);
+どうしますか？`,[{label:'前回の内容を消して新しく始める',value:false},{label:'復元して続きから',value:true,primary:true}]);
   if(ok){ try{ if(raw) loadProjectData(JSON.parse(raw)); }catch(e){} loadScan(key); toast('前回の作業内容を復元しました',4000); }
   else { try{ localStorage.removeItem('courttrace:'+key); localStorage.removeItem('courttrace:scan:'+key); }catch(e){} S.scan=null; renderClusters(); scheduleSave(); toast('新しく始めます',3000); }
 }
@@ -1066,7 +1075,7 @@ async function download(name,blob){
     if(dl){ try{ await dl.save({filename:name, data:blob}); toast('保存しました: '+name); }catch(e){ if(e&&e.code!=='declined') toast('保存できませんでした: '+(e.message||e.code)); } return; } }catch(e){}
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},1000); }
 $('#saveBtn').addEventListener('click',async()=>{ const json=serialize(); const name=(P().name||'project').replace(/\.[^.]+$/,'')+'.courttrace.json'; try{ await navigator.clipboard.writeText(json); }catch(e){} await download(name,new Blob([json],{type:'application/json'})); });
-$('#newProjBtn').addEventListener('click',()=>{ if(!confirm('この動画の入力内容（位置合わせ・キーフレーム・描画・スタッツ）をすべて消して最初からやり直しますか？')) return; const src=S.source; const name=P().name; S.project=newProject(); S.project.name=name; if(src){ S.project.source = src.kind==='youtube' ? {type:'youtube',id:src.id} : src.kind==='video' ? {type:'file',name:src.name} : {type:'demo'}; try{ localStorage.removeItem('courttrace:'+src.key); localStorage.removeItem('courttrace:scan:'+src.key); }catch(e){} } renderClusters(); S.selected=null; S.lm=null; S.ptOrder=[]; S.wiz=null; S.scan=null; S.undo=[]; renderRoster(); renderCalibList(); applySettingsUI(); renderStats(); scheduleSave(); toast('新規プロジェクトにしました'); });
+$('#newProjBtn').addEventListener('click',async()=>{ if(!(await ask('この動画の入力内容（位置合わせ・キーフレーム・描画・スタッツ・自動解析の結果）をすべて消して、最初からやり直しますか？',[{label:'キャンセル',value:false},{label:'消して新しく始める',value:true,primary:true}]))) return; const src=S.source; const name=P().name; S.project=newProject(); S.project.name=name; if(src){ S.project.source = src.kind==='youtube' ? {type:'youtube',id:src.id} : src.kind==='video' ? {type:'file',name:src.name} : {type:'demo'}; try{ localStorage.removeItem('courttrace:'+src.key); localStorage.removeItem('courttrace:scan:'+src.key); }catch(e){} } renderClusters(); S.selected=null; S.lm=null; S.ptOrder=[]; S.wiz=null; S.scan=null; S.undo=[]; renderRoster(); renderCalibList(); applySettingsUI(); renderStats(); scheduleSave(); toast('新規プロジェクトにしました'); });
 $('#projIn').addEventListener('change',e=>{ const f=e.target.files[0]; if(!f) return; f.text().then(txt=>{ try{ loadProjectData(JSON.parse(txt)); toast(P().source&&P().source.type==='youtube' ? 'プロジェクトを読み込み、YouTube動画を開いています。' : 'プロジェクトを読み込みました。同じ動画を「動画を開く」で開いてください。',4500); }catch(err){ toast('読み込めませんでした: '+err.message); } }); e.target.value=''; });
 $('#pngBtn').addEventListener('click',()=>{ board.toBlob(b=>download('board_'+fmt(now()).replace(/[:.]/g,'-')+'.png',b)); });
 
@@ -1192,8 +1201,8 @@ async function runScanInner(a,b){
   $('#scanNote').textContent=`解析完了（${((performance.now()-t0)/1000/60).toFixed(1)}分、人の動き ${good.length} 本、カメラ追跡の失敗 ${lostFrames}/${frameCount} フレーム）。ボードに自動コマが出ています。チームの色分けが逆なら下で入れ替えてください。`+errTxt;
   toast('自動解析が完了しました。再生するとボードで全員が動きます。',5000); renderRoster();
 }
-$('#autoAllBtn').addEventListener('click',()=>{ if(!S.source) return toast('先に動画を開いてください'); const d=S.source.duration||0; if(!d) return toast('動画の長さが取れません'); if(S.scan&&!confirm('既存の解析結果を置き換えますか？')) return; runScan(0,d); });
-$('#scanBtn').addEventListener('click',()=>{ const g=seg(); if(!g) return toast('先に「ここから15秒」などで範囲を決めてください',4000); if(S.scan&&!confirm('既存の解析結果を置き換えますか？')) return; runScan(g.a,g.b); });
+$('#autoAllBtn').addEventListener('click',async()=>{ if(!S.source) return toast('先に動画を開いてください'); const d=S.source.duration||0; if(!d) return toast('動画の長さが取れません'); if(S.scan&&!(await confirmAsk('既存の解析結果を置き換えますか？'))) return; runScan(0,d); });
+$('#scanBtn').addEventListener('click',async()=>{ const g=seg(); if(!g) return toast('先に「ここから15秒」などで範囲を決めてください',4000); if(S.scan&&!(await confirmAsk('既存の解析結果を置き換えますか？'))) return; runScan(g.a,g.b); });
 $('#stopScanBtn').addEventListener('click',()=>{ trackAbort=true; });
 $('#recalcScanBtn').addEventListener('click',()=>{ const n=recomputeScan(); toast(n?`解析結果 ${n} 点の位置を今の位置合わせで計算し直しました`:'解析結果がありません',4000); });
 function applyClusterTeams(){ const sc=S.scan; if(!sc) return; for(const id in sc.tracks){ const tr=sc.tracks[id]; const cl=sc.clusters[tr.k]; tr.team=cl?cl.team:'X'; } }
@@ -1284,7 +1293,7 @@ function renderStats(){
     d.innerHTML=`<span class="t">${fmt(e.t)}</span><span class="dot" style="background:${T[e.team].color}"></span><span>${lbl}${pl}</span><button class="x" title="削除">×</button>`;
     d.addEventListener('click',ev=>{ if(ev.target.closest('button')) return; seek(e.t); }); d.querySelector('.x').addEventListener('click',()=>{ P().events=P().events.filter(x=>x!==e); scheduleSave(); renderStats(); }); list.appendChild(d); }
 }
-$('#clearEvBtn').addEventListener('click',()=>{ if(!P().events.length) return; if(!confirm('記録したイベントをすべて削除しますか？')) return; P().events=[]; S.pendingShot=null; $('#pendMsg').hidden=true; scheduleSave(); renderStats(); });
+$('#clearEvBtn').addEventListener('click',async()=>{ if(!P().events.length) return; if(!(await confirmAsk('記録したイベントをすべて削除しますか？'))) return; P().events=[]; S.pendingShot=null; $('#pendMsg').hidden=true; scheduleSave(); renderStats(); });
 $('#csvBtn').addEventListener('click',()=>{ const T=P().teams; const rows=[['time_sec','time','team','player','type','made','attempts','x_m','y_m','zone']]; for(const e of P().events){ const pl=e.player&&byId(e.player)?byId(e.player).num:''; rows.push([e.t.toFixed(2),fmt(e.t),T[e.team].name,pl,e.type,e.made===true?1:e.made===false?0:(e.made??''),e.att??'',e.x!=null?e.x.toFixed(2):'',e.y!=null?e.y.toFixed(2):'',e.x!=null?shotZone(e.x,e.y):'']); }
   const A=teamStats('A',Infinity),B=teamStats('B',Infinity); rows.push([]); rows.push(['summary','',T.A.name,'',T.B.name]); for(const [k,va,vb] of [['PTS',A.pts,B.pts],['POSS',A.poss.toFixed(1),B.poss.toFixed(1)],['eFG%',pct(A.efg),pct(B.efg)],['TO%',pct(A.top),pct(B.top)],['ORB%',pct(A.orbp),pct(B.orbp)],['FT_rate',A.ftr==null?'':A.ftr.toFixed(2),B.ftr==null?'':B.ftr.toFixed(2)]]) rows.push([k,'',va,'',vb]);
   const csv='﻿'+rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n'); download((P().name||'game').replace(/\.[^.]+$/,'')+'_stats.csv',new Blob([csv],{type:'text/csv'})); });

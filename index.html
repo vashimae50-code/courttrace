@@ -296,6 +296,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
           <button class="btn sm danger" id="delCalibBtn">削除</button>
         </div>
         <button class="btn sm" id="snapBtn" hidden style="margin-top:6px;width:100%">白線に吸着して微調整</button>
+        <button class="btn sm" id="mirrorBtn" style="margin-top:6px;width:100%" title="ボードの左右が映像と逆のとき。位置合わせ・解析結果・コマをまとめて左右反転します（再解析不要）">ボードの左右を反転</button>
         <button class="btn sm" id="mergeCalibBtn" hidden style="margin-top:6px;width:100%">左右の位置合わせを1つに統合（固定カメラ向け）</button>
         <button class="btn" id="goTrackBtn" hidden style="margin:6px 0;width:100%">✓ 位置合わせOK → 追跡に進む</button>
         <div class="wiz" id="wizBox" hidden>
@@ -364,6 +365,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         <select id="penW" class="btn sm"><option value="0.08">細</option><option value="0.14" selected>中</option><option value="0.24">太</option></select>
         <button class="btn sm" id="undoBtn">取消</button>
         <button class="btn sm" id="clearDrawBtn">描画クリア</button>
+        <label class="field" style="margin:0;gap:4px" title="いま映っている範囲とカメラの推定位置をボードに描く"><input type="checkbox" id="showCam" checked> カメラ</label>
         <select id="division" class="btn sm" title="コートの分割線">
           <option value="none">分割線なし</option>
           <option value="lanes3">オールコート3分割</option>
@@ -715,7 +717,7 @@ scrub.addEventListener('change',()=>scrubbing=false);
 function mediaRect(){ const vw=viewport.clientWidth, vh=viewport.clientHeight; const sw=S.source?S.source.width:16, sh=S.source?S.source.height:9; const s=Math.min(vw/sw,vh/sh); const w=sw*s,h=sh*s; return {x:(vw-w)/2,y:(vh-h)/2,w,h}; }
 const board=$('#board'), boardwrap=$('#boardwrap'), tl=$('#tl');
 let BG={s:20,ox:0,oy:0};
-function boardGeom(){ const w=boardwrap.clientWidth, h=boardwrap.clientHeight; const m=1.2; const s=Math.min(w/(C.L+2*m), h/(C.W+2*m)); BG={s, ox:(w-C.L*s)/2, oy:(h-C.W*s)/2, w, h}; }
+function boardGeom(){ const w=boardwrap.clientWidth, h=boardwrap.clientHeight; const m=($('#showCam')&&$('#showCam').checked)?4.5:1.2; const s=Math.min(w/(C.L+2*m), h/(C.W+2*m)); BG={s, ox:(w-C.L*s)/2, oy:(h-C.W*s)/2, w, h}; }
 const toPx=(x,y)=>[BG.ox+x*BG.s, BG.oy+(C.W-y)*BG.s];
 const fromPx=(px,py)=>[(px-BG.ox)/BG.s, C.W-(py-BG.oy)/BG.s];
 function fitCanvas(cv,w,h){ const d=window.devicePixelRatio||1; if(cv.width!==Math.round(w*d)||cv.height!==Math.round(h*d)){ cv.width=Math.round(w*d); cv.height=Math.round(h*d); } cv.style.width=w+'px'; cv.style.height=h+'px'; const g=cv.getContext('2d'); g.setTransform(d,0,0,d,0,0); return g; }
@@ -758,6 +760,11 @@ function drawBoard(){
       g.beginPath(); g.arc(px,py,r,0,Math.PI*2); g.fillStyle=cur?accent:bad?cssVar('--bad'):placed?cssVar('--ok'):'rgba(255,255,255,.92)'; g.fill(); g.lineWidth=cur?3:1.5; g.strokeStyle=cur?'#fff':'rgba(0,0,0,.55)'; g.stroke();
       if(placed&&!cur){ g.fillStyle='#fff'; g.font=`700 ${Math.max(9,r*1.3)}px "Barlow Condensed",sans-serif`; g.textAlign='center'; g.textBaseline='middle'; g.fillText('✓',px,py+0.5); } }
     if(S.lm&&LM[S.lm]){ const [px,py]=toPx(LM[S.lm].x,LM[S.lm].y); g.font='600 13px "Noto Sans JP",sans-serif'; g.textAlign='center'; g.textBaseline='bottom'; const txt=LM[S.lm].name+' → 動画でクリック'; const w=g.measureText(txt).width+14; g.fillStyle='rgba(20,15,5,.85)'; g.beginPath(); g.roundRect(px-w/2,py-Math.max(14,0.6*s)-22,w,22,6); g.fill(); g.fillStyle='#fff'; g.fillText(txt,px,py-Math.max(14,0.6*s)-4); } }
+  // camera: visible floor region for the current frame and the estimated camera spot (from the current homography)
+  if($('#showCam').checked){ const c=calibAt(t); if(c&&c.H){ const corners=[[0,1],[1,1],[1,0.55],[0,0.55]].map(([u,v])=>applyH(c.H,u,v)).filter(q=>q&&q[2]>0).map(q=>[clamp(q[0],-6,C.L+6),clamp(q[1],-6,C.W+6)]);
+      if(corners.length===4){ g.save(); g.beginPath(); corners.forEach((p,i)=>{ const q=toPx(...p); i?g.lineTo(...q):g.moveTo(...q); }); g.closePath(); g.fillStyle='rgba(255,255,255,.14)'; g.fill(); g.setLineDash([4,4]); g.strokeStyle='rgba(255,255,255,.7)'; g.lineWidth=1.5; g.stroke(); g.restore(); }
+      const L1=[applyH(c.H,0,1),applyH(c.H,0,0.4)], L2=[applyH(c.H,1,1),applyH(c.H,1,0.4)];
+      if(L1[0]&&L1[1]&&L2[0]&&L2[1]){ const [x1,y1]=L1[0],[x2,y2]=L1[1],[x3,y3]=L2[0],[x4,y4]=L2[1]; const den=(x1-x2)*(y3-y4)-(y1-y2)*(x3-x4); if(Math.abs(den)>1e-9){ const px=((x1*y2-y1*x2)*(x3-x4)-(x1-x2)*(x3*y4-y3*x4))/den, py=((x1*y2-y1*x2)*(y3-y4)-(y1-y2)*(x3*y4-y3*x4))/den; const cx=clamp(px,-8,C.L+8), cy=clamp(py,-8,C.W+8); const [sx,sy]=toPx(cx,cy); g.save(); g.fillStyle='rgba(30,30,36,.85)'; g.beginPath(); g.roundRect(sx-9,sy-6,18,12,3); g.fill(); g.beginPath(); g.arc(sx,sy,4,0,Math.PI*2); g.fillStyle='#fff'; g.fill(); g.font='600 11px "Noto Sans JP",sans-serif'; g.fillStyle=cssVar('--ink'); g.textAlign='center'; g.textBaseline='top'; g.fillText('カメラ(推定)',sx,sy+8); g.restore(); } } } }
   // auto pieces from AI scan
   const showId=$('#showAutoId').checked; for(const ap of autoPiecesAt(t)){ const [px,py]=toPx(ap.x,ap.y); const col=P().teams[ap.tr.team]?P().teams[ap.tr.team].color:'#888'; const r=0.45*s; g.beginPath(); g.arc(px,py,r,0,Math.PI*2); g.fillStyle=col; g.globalAlpha=.55; g.fill(); g.globalAlpha=1; g.setLineDash([3,3]); g.strokeStyle='rgba(255,255,255,.9)'; g.lineWidth=1.5; g.stroke(); g.setLineDash([]); if(showId){ g.fillStyle='#fff'; g.font=`600 ${Math.max(9,r*0.9)}px "Barlow Condensed",sans-serif`; g.textAlign='center'; g.textBaseline='middle'; g.fillText('T'+ap.tr.id,px,py+0.5); } }
   // pieces
@@ -983,6 +990,17 @@ $('#clearPtsBtn').addEventListener('click',async()=>{ const c=calibAt(now()); if
 function recomputeScan(){ const sc=S.scan; if(!sc) return 0; let n=0; const byId2=Object.fromEntries(P().calibs.map(c=>[c.id,c])); const conv=(pt,t)=>{ const e=scanH(t); if(e){ const r=applyH(e.H,pt.fu,pt.fv); return r?[r[0],r[1]]:null; } const c=pt.cid&&byId2[pt.cid]; if(c&&c.H){ const r=applyH(c.H,pt.fu,pt.fv); return r?[r[0],r[1]]:null; } if(P().calibs.length===1&&P().calibs[0].H){ const r=applyH(P().calibs[0].H,pt.fu,pt.fv); return r?[r[0],r[1]]:null; } return null; };
   for(const id in sc.tracks){ const tr=sc.tracks[id]; for(const pt of tr.pts){ if(pt.fu==null) continue; const q=conv(pt,pt.t); if(q){ pt.x=clamp(q[0],-1,C.L+1); pt.y=clamp(q[1],-1,C.W+1); n++; } } } for(const fr of sc.frames) for(const d of fr.dets){ if(d.fu==null) continue; const q=conv(d,fr.t); if(q){ d.x=q[0]; d.y=q[1]; } } saveScan(); return n; }
 $('#snapBtn').addEventListener('click',async()=>{ const t=now(); let c=null,bd=Infinity; for(const k of P().calibs){ const d=Math.abs(k.t-t); if(d<bd){bd=d;c=k;} } if(!c||bd>1.5) c=calibByTime(t); if(!c||!c.H) return; if(Math.abs(now()-c.t)>0.03){ seek(c.t+0.02); await new Promise(r=>setTimeout(r,500)); } const rf=snapCalib(c); if(!rf||rf.rejected||rf.inliers<40||rf.score<0.28) return toast(`白線に十分合わせられませんでした（一致 ${rf?rf.inliers:0} 点）。点を置き直してから再度お試しください`,5000); renderCalibList(); toast(`位置合わせ ${fmt(c.t)} を白線に吸着しました（一致 ${rf.inliers}/${rf.total} 点）。緑の線がコートの線に重なっているか確認してください`,5000); });
+function mirrorAll(){
+  const MX=[[-1,0,C.L],[0,1,0],[0,0,1]]; const swapId=id=>id.startsWith('左 ')?'右 '+id.slice(2):id.startsWith('右 ')?'左 '+id.slice(2):id;
+  for(const c of P().calibs){ const pts={}; for(const id in c.pts) pts[swapId(id)]=c.pts[id]; c.pts=pts; recomputeCalib(c); }
+  for(const p of P().players) for(const k of p.kfs) if(k.x!=null) k.x=C.L-k.x;
+  for(const k of P().ball.kfs) if(k.x!=null) k.x=C.L-k.x;
+  for(const sk of P().strokes) for(const pt of sk.pts) pt[0]=C.L-pt[0];
+  for(const ev of P().events) if(ev.x!=null) ev.x=C.L-ev.x;
+  const sc=S.scan; if(sc){ for(const id in sc.tracks) for(const pt of sc.tracks[id].pts) pt.x=C.L-pt.x; for(const o of (sc.ball||[])) o.x=C.L-o.x; for(const fr of sc.frames) for(const d of fr.dets) if(d.x!=null) d.x=C.L-d.x; for(const h of (sc.Hs||[])){ if(h.H){ h.H=mat3mul(MX,h.H); h.Hi=null; } } saveScan(); }
+  S.viewCache=null; S.viewLast=null; scheduleSave(); renderCalibList(); renderRoster(); toast('ボードの左右を反転しました（位置合わせ・解析結果・コマすべて）',4000);
+}
+$('#mirrorBtn').addEventListener('click',mirrorAll);
 $('#mergeCalibBtn').addEventListener('click',async()=>{ const cs=P().calibs; if(cs.length<2) return; if(!(await confirmAsk(`${cs.length}件の位置合わせの点をすべて1つにまとめます（カメラが動いていない前提）。よろしいですか？`))) return; const pts={}; for(const c of cs) Object.assign(pts,c.pts); const m={id:uid(),t:0,pts,H:null,Hi:null}; recomputeCalib(m); if(!m.H) return toast('統合した点では計算できませんでした'); P().calibs=[m]; S.wiz=null; S.lm=null; scheduleSave(); renderCalibList(); const n=recomputeScan(); toast(`統合しました（${Object.keys(pts).length}点、誤差 ${(m.err*100).toFixed(2)}%）。`+(n?`解析結果 ${n} 点の位置も新しい位置合わせで計算し直しました。`:'')+'赤い点があれば置き直してください。',7000); });
 $('#delCalibBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c) return; P().calibs=P().calibs.filter(k=>k!==c); scheduleSave(); renderCalibList(); toast('位置合わせを削除しました'); });
 function setVMode(m){ S.promptMode=false; $('#promptModeBtn').classList.remove('on'); S.vmode=m; $$('[data-vmode]').forEach(b=>b.classList.toggle('on',b.dataset.vmode===m)); $('#calibModeBtn').classList.toggle('on',m==='calib'); renderCalibList(); }
@@ -1075,6 +1093,7 @@ $('#split2').addEventListener('change',e=>{P().settings.split2=parseFloat(e.targ
 $('#trails').addEventListener('change',e=>{P().settings.trails=e.target.checked; scheduleSave();});
 $('#division').addEventListener('change',e=>{P().settings.division=e.target.value; scheduleSave();});
 $('#offense').addEventListener('change',e=>{P().settings.offense=e.target.value; scheduleSave();});
+$('#showCam').addEventListener('change',()=>{ boardGeom(); });
 $('#showProj').addEventListener('change',e=>{P().settings.showProj=e.target.checked; scheduleSave();});
 
 // ───────────────────────── persistence
@@ -1366,7 +1385,11 @@ function trackPosAt(tr,t){ const pts=tr.pts; if(!pts.length) return null; if(t<p
 function autoBallPos(t){ const sc=S.scan; const obs=sc&&sc.ball; if(!obs||!obs.length) return null; let lo=0,hi=obs.length-1; while(lo<hi){ const mid=(lo+hi+1)>>1; if(obs[mid].t<=t) lo=mid; else hi=mid-1; } const last=obs[lo].t<=t?obs[lo]:null; const next=obs[lo].t<=t?obs[lo+1]:obs[lo];
   if(last && t-last.t<=4){ if(last.track&&sc.tracks[last.track]){ const p=trackPosAt(sc.tracks[last.track],t); if(p) return {x:p[0],y:p[1],src:'holder'}; } if(next&&next.t-t<=1.5&&next.t>last.t){ const u=(t-last.t)/(next.t-last.t); return {x:lerp(last.x,next.x,u),y:lerp(last.y,next.y,u),src:'flight'}; } return {x:last.x,y:last.y,src:'last'}; }
   if(next && next.t-t<=1.5) return {x:next.x,y:next.y,src:'next'}; return null; }
-function autoPiecesAt(t){ const sc=S.scan; if(!sc||!$('#showAuto').checked) return []; const out=[]; for(const id in sc.tracks){ const tr=sc.tracks[id]; if(tr.player||tr.team==='X'||!tr.team) continue; const q=trackPosAt(tr,t); if(q) out.push({tr,x:q[0],y:q[1]}); } return out; }
+function autoPiecesAt(t){ const sc=S.scan; if(!sc||!$('#showAuto').checked) return []; let out=[]; for(const id in sc.tracks){ const tr=sc.tracks[id]; if(tr.player||tr.team==='X'||!tr.team) continue; const q=trackPosAt(tr,t); if(q) out.push({tr,x:q[0],y:q[1],len:tr.pts.length}); }
+  // one person can briefly be two tracks (a break + a new start): keep the longer track when two pieces overlap
+  out.sort((a,b)=>b.len-a.len); const kept=[]; for(const ap of out){ if(kept.some(k=>Math.hypot(k.x-ap.x,k.y-ap.y)<0.6)) continue; kept.push(ap); }
+  // 5 v 5 (+ referees): never show more than 12 people
+  return kept.slice(0,12); }
 function assignTrack(trackId,playerId){
   const tr=S.scan&&S.scan.tracks[trackId]; const p=byId(playerId); if(!tr||!p) return false; let n=0;
   for(const pt of tr.pts){ setKf(p.kfs,{t:pt.t,v:true,x:pt.x,y:pt.y}); n++; }

@@ -297,6 +297,9 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         </div>
         <button class="btn sm" id="snapBtn" hidden style="margin-top:6px;width:100%">白線に吸着して微調整</button>
         <button class="btn sm" id="mirrorBtn" style="margin-top:6px;width:100%" title="ボードの左右が映像と逆のとき。位置合わせ・解析結果・コマをまとめて左右反転します（再解析不要）">ボードの左右を反転</button>
+        <div class="actions" style="margin-top:6px"><button class="btn sm" id="camBtn" title="カメラは動かない前提で、ボード上の位置をクリックして指定します。以後の解析でカメラの向きとズームだけを推定するようになります">カメラ位置を指定</button><button class="btn sm" id="camClearBtn" hidden>解除</button></div>
+        <div class="field" id="camZRow" hidden><label>カメラの高さ (m)</label><input type="number" id="camZ" min="1" max="20" step="0.5" style="width:70px"></div>
+        <p class="note" id="camNote" hidden></p>
         <button class="btn sm" id="mergeCalibBtn" hidden style="margin-top:6px;width:100%">左右の位置合わせを1つに統合（固定カメラ向け）</button>
         <button class="btn" id="goTrackBtn" hidden style="margin:6px 0;width:100%">✓ 位置合わせOK → 追跡に進む</button>
         <div class="wiz" id="wizBox" hidden>
@@ -717,7 +720,7 @@ scrub.addEventListener('change',()=>scrubbing=false);
 function mediaRect(){ const vw=viewport.clientWidth, vh=viewport.clientHeight; const sw=S.source?S.source.width:16, sh=S.source?S.source.height:9; const s=Math.min(vw/sw,vh/sh); const w=sw*s,h=sh*s; return {x:(vw-w)/2,y:(vh-h)/2,w,h}; }
 const board=$('#board'), boardwrap=$('#boardwrap'), tl=$('#tl');
 let BG={s:20,ox:0,oy:0};
-function boardGeom(){ const w=boardwrap.clientWidth, h=boardwrap.clientHeight; const m=($('#showCam')&&$('#showCam').checked)?4.5:1.2; const s=Math.min(w/(C.L+2*m), h/(C.W+2*m)); BG={s, ox:(w-C.L*s)/2, oy:(h-C.W*s)/2, w, h}; }
+function boardGeom(){ const w=boardwrap.clientWidth, h=boardwrap.clientHeight; const camSet=S.project&&S.project.settings&&S.project.settings.cam; const m=(($('#showCam')&&$('#showCam').checked)||camSet)?4.5:1.2; const s=Math.min(w/(C.L+2*m), h/(C.W+2*m)); BG={s, ox:(w-C.L*s)/2, oy:(h-C.W*s)/2, w, h}; }
 const toPx=(x,y)=>[BG.ox+x*BG.s, BG.oy+(C.W-y)*BG.s];
 const fromPx=(px,py)=>[(px-BG.ox)/BG.s, C.W-(py-BG.oy)/BG.s];
 function fitCanvas(cv,w,h){ const d=window.devicePixelRatio||1; if(cv.width!==Math.round(w*d)||cv.height!==Math.round(h*d)){ cv.width=Math.round(w*d); cv.height=Math.round(h*d); } cv.style.width=w+'px'; cv.style.height=h+'px'; const g=cv.getContext('2d'); g.setTransform(d,0,0,d,0,0); return g; }
@@ -763,8 +766,8 @@ function drawBoard(){
   // camera: visible floor region for the current frame and the estimated camera spot (from the current homography)
   if($('#showCam').checked){ const c=calibAt(t); if(c&&c.H){ const corners=[[0,1],[1,1],[1,0.55],[0,0.55]].map(([u,v])=>applyH(c.H,u,v)).filter(q=>q&&q[2]>0).map(q=>[clamp(q[0],-6,C.L+6),clamp(q[1],-6,C.W+6)]);
       if(corners.length===4){ g.save(); g.beginPath(); corners.forEach((p,i)=>{ const q=toPx(...p); i?g.lineTo(...q):g.moveTo(...q); }); g.closePath(); g.fillStyle='rgba(255,255,255,.14)'; g.fill(); g.setLineDash([4,4]); g.strokeStyle='rgba(255,255,255,.7)'; g.lineWidth=1.5; g.stroke(); g.restore(); }
-      const L1=[applyH(c.H,0,1),applyH(c.H,0,0.4)], L2=[applyH(c.H,1,1),applyH(c.H,1,0.4)];
-      if(L1[0]&&L1[1]&&L2[0]&&L2[1]){ const [x1,y1]=L1[0],[x2,y2]=L1[1],[x3,y3]=L2[0],[x4,y4]=L2[1]; const den=(x1-x2)*(y3-y4)-(y1-y2)*(x3-x4); if(Math.abs(den)>1e-9){ const px=((x1*y2-y1*x2)*(x3-x4)-(x1-x2)*(x3*y4-y3*x4))/den, py=((x1*y2-y1*x2)*(y3-y4)-(y1-y2)*(x3*y4-y3*x4))/den; const cx=clamp(px,-8,C.L+8), cy=clamp(py,-8,C.W+8); const [sx,sy]=toPx(cx,cy); g.save(); g.fillStyle='rgba(30,30,36,.85)'; g.beginPath(); g.roundRect(sx-9,sy-6,18,12,3); g.fill(); g.beginPath(); g.arc(sx,sy,4,0,Math.PI*2); g.fillStyle='#fff'; g.fill(); g.font='600 11px "Noto Sans JP",sans-serif'; g.fillStyle=cssVar('--ink'); g.textAlign='center'; g.textBaseline='top'; g.fillText('カメラ(推定)',sx,sy+8); g.restore(); } } } }
+      } }
+  { const cam=P().settings.cam; if(cam&&cam.x!=null){ const [sx,sy]=toPx(clamp(cam.x,-8,C.L+8),clamp(cam.y,-8,C.W+8)); g.save(); g.fillStyle='rgba(30,30,36,.9)'; g.beginPath(); g.roundRect(sx-10,sy-7,20,14,3); g.fill(); g.beginPath(); g.arc(sx,sy,4.5,0,Math.PI*2); g.fillStyle='#fff'; g.fill(); g.font='600 11px "Noto Sans JP",sans-serif'; g.fillStyle=cssVar('--ink'); g.textAlign='center'; g.textBaseline='top'; g.fillText('カメラ',sx,sy+9); g.restore(); } }
   // auto pieces from AI scan
   const showId=$('#showAutoId').checked; for(const ap of autoPiecesAt(t)){ const [px,py]=toPx(ap.x,ap.y); const col=P().teams[ap.tr.team]?P().teams[ap.tr.team].color:'#888'; const r=0.45*s; g.beginPath(); g.arc(px,py,r,0,Math.PI*2); g.fillStyle=col; g.globalAlpha=.55; g.fill(); g.globalAlpha=1; g.setLineDash([3,3]); g.strokeStyle='rgba(255,255,255,.9)'; g.lineWidth=1.5; g.stroke(); g.setLineDash([]); if(showId){ g.fillStyle='#fff'; g.font=`600 ${Math.max(9,r*0.9)}px "Barlow Condensed",sans-serif`; g.textAlign='center'; g.textBaseline='middle'; g.fillText('T'+ap.tr.id,px,py+0.5); } }
   // pieces
@@ -1001,6 +1004,11 @@ function mirrorAll(){
   S.viewCache=null; S.viewLast=null; scheduleSave(); renderCalibList(); renderRoster(); toast('ボードの左右を反転しました（位置合わせ・解析結果・コマすべて）',4000);
 }
 $('#mirrorBtn').addEventListener('click',mirrorAll);
+function estimateCamZ(){ const W=S.source?S.source.width:1920, Hh=S.source?S.source.height:1080; const cs=P().calibs.filter(c=>c.H); if(!cs.length) return 6; const cam=P().settings.cam; let best=null; for(let z=2.5;z<=12;z+=0.5){ let sum=0,n=0; for(const c of cs){ const f=pinnedFit(c.H,{x:cam.x,y:cam.y,z},W,Hh); if(f){ sum+=f.residualPx; n++; } } if(n&&(!best||sum/n<best.r)) best={z,r:sum/n}; } return best?best.z:6; }
+function renderCam(){ const cam=P().settings.cam; const has=!!(cam&&cam.x!=null); $('#camClearBtn').hidden=!has; $('#camZRow').hidden=!has; $('#camNote').hidden=!has; $('#camBtn').classList.toggle('on',!!S.camMode); if(has){ $('#camZ').value=cam.z; const cs=P().calibs.filter(c=>c.H); const est=cs.map(c=>decomposeH(c.H,S.source?S.source.width:1920,S.source?S.source.height:1080)).filter(Boolean); const txt=est.length?'位置合わせから逆算したカメラ位置: '+est.map(d=>'('+d.C[0].toFixed(1)+', '+d.C[1].toFixed(1)+') 高さ'+d.C[2].toFixed(1)+'m').join(' / '):''; $('#camNote').textContent='カメラ位置 ('+cam.x.toFixed(1)+', '+cam.y.toFixed(1)+') 高さ '+cam.z+'m を固定して、向きとズームだけを推定します。'+txt; } }
+$('#camBtn').addEventListener('click',()=>{ S.camMode=!S.camMode; renderCam(); if(S.camMode) toast('ボード上でカメラのある場所をクリックしてください（コートの外でも構いません。観客席側なら下側の外）',5000); });
+$('#camClearBtn').addEventListener('click',()=>{ P().settings.cam=null; S.camMode=false; scheduleSave(); renderCam(); boardGeom(); });
+$('#camZ').addEventListener('change',e=>{ const cam=P().settings.cam; if(cam){ cam.z=parseFloat(e.target.value)||cam.z; scheduleSave(); renderCam(); } });
 $('#mergeCalibBtn').addEventListener('click',async()=>{ const cs=P().calibs; if(cs.length<2) return; if(!(await confirmAsk(`${cs.length}件の位置合わせの点をすべて1つにまとめます（カメラが動いていない前提）。よろしいですか？`))) return; const pts={}; for(const c of cs) Object.assign(pts,c.pts); const m={id:uid(),t:0,pts,H:null,Hi:null}; recomputeCalib(m); if(!m.H) return toast('統合した点では計算できませんでした'); P().calibs=[m]; S.wiz=null; S.lm=null; scheduleSave(); renderCalibList(); const n=recomputeScan(); toast(`統合しました（${Object.keys(pts).length}点、誤差 ${(m.err*100).toFixed(2)}%）。`+(n?`解析結果 ${n} 点の位置も新しい位置合わせで計算し直しました。`:'')+'赤い点があれば置き直してください。',7000); });
 $('#delCalibBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c) return; P().calibs=P().calibs.filter(k=>k!==c); scheduleSave(); renderCalibList(); toast('位置合わせを削除しました'); });
 function setVMode(m){ S.promptMode=false; $('#promptModeBtn').classList.remove('on'); S.vmode=m; $$('[data-vmode]').forEach(b=>b.classList.toggle('on',b.dataset.vmode===m)); $('#calibModeBtn').classList.toggle('on',m==='calib'); renderCalibList(); }
@@ -1048,6 +1056,7 @@ function strokeNear(x,y){ const tol=0.45; for(let i=P().strokes.length-1;i>=0;i-
 function distSeg(p,a,b){ const dx=b[0]-a[0],dy=b[1]-a[1]; const l2=dx*dx+dy*dy||1e-9; const u=clamp(((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l2,0,1); return Math.hypot(p[0]-a[0]-u*dx,p[1]-a[1]-u*dy); }
 board.addEventListener('pointerdown',e=>{
   const pt=boardPoint(e), t=now(); board.setPointerCapture(e.pointerId);
+  if(S.camMode){ P().settings.cam={x:+pt.x.toFixed(2),y:+pt.y.toFixed(2),z:6}; P().settings.cam.z=estimateCamZ(); S.camMode=false; scheduleSave(); renderCam(); boardGeom(); toast('カメラ位置を ('+pt.x.toFixed(1)+', '+pt.y.toFixed(1)+') に設定。高さは位置合わせから '+P().settings.cam.z+'m と推定しました（変更可）。次回の解析からこの位置を固定して計算します',7000); return; }
   if(S.vmode==='calib'){ const id=nearestLandmark(pt.x,pt.y); if(id){ S.lm=id; renderCalibList(); const c=calibAt(t); toast((c&&c.pts[id])?`「${LM[id].name}」は置き済みです。動画でクリックすると置き直します`:`「${LM[id].name}」を選択。動画の同じ場所をクリックしてください`,3000); } else toast('線の交点や角など、印のある場所をクリックしてください'); return; }
   if(S.pendingShot){ S.pendingShot.x=clamp(pt.x,0,C.L); S.pendingShot.y=clamp(pt.y,0,C.W); S.pendingShot=null; $('#pendMsg').hidden=true; scheduleSave(); renderStats(); toast('シュート位置を記録しました'); return; }
   if(S.tool==='select'){
@@ -1084,7 +1093,7 @@ $('#undoBtn').addEventListener('click',undoDraw);
 $('#clearDrawBtn').addEventListener('click',()=>{ if(!P().strokes.length) return; S.undo.push(P().strokes.slice()); P().strokes=[]; scheduleSave(); });
 
 // ───────────────────────── settings
-function applySettingsUI(){ const st=P().settings; renderSeg(); $('#maxGap').value=st.maxGap; $('#stepSec').value=st.step; $('#split1').value=st.split1; $('#split2').value=st.split2; $('#trails').checked=st.trails; $('#division').value=st.division; $('#offense').value=st.offense; $('#showProj').checked=st.showProj;
+function applySettingsUI(){ const st=P().settings; renderSeg(); if($('#camBtn')) renderCam(); $('#maxGap').value=st.maxGap; $('#stepSec').value=st.step; $('#split1').value=st.split1; $('#split2').value=st.split2; $('#trails').checked=st.trails; $('#division').value=st.division; $('#offense').value=st.offense; $('#showProj').checked=st.showProj;
   $('#offense').options[0].textContent='OF: '+P().teams.A.name; $('#offense').options[1].textContent='OF: '+P().teams.B.name; }
 $('#maxGap').addEventListener('change',e=>{P().settings.maxGap=parseFloat(e.target.value)||3; scheduleSave();});
 $('#stepSec').addEventListener('change',e=>{P().settings.step=parseFloat(e.target.value)||0; scheduleSave();});
@@ -1231,7 +1240,7 @@ const RF_SAMPLES=(()=>{ const out=[]; const paths=COURT_PATHS.filter(p=>p.length
 function ransacH(src,dst,thrPx,iters){ // src: court points, dst: normalized image points → returns H (court ← image)
   const n=src.length; if(n<8) return null; let bestC2I=null,bestIn=[];
   for(let it=0;it<iters;it++){ const pick=[]; while(pick.length<4){ const j=Math.floor(Math.random()*n); if(!pick.includes(j)) pick.push(j); } const C2I=computeHomography(pick.map(j=>src[j]),pick.map(j=>dst[j])); if(!C2I) continue; const inl=[]; for(let j=0;j<n;j++){ const q=applyH(C2I,src[j][0],src[j][1]); if(!q||q[2]<=0) continue; const dx=(q[0]-dst[j][0])*RFW, dy=(q[1]-dst[j][1])*RFH; if(dx*dx+dy*dy<thrPx*thrPx) inl.push(j); } if(inl.length>bestIn.length){ bestIn=inl; bestC2I=C2I; } }
-  if(bestIn.length<8) return null; const C2I=computeHomography(bestIn.map(j=>src[j]),bestIn.map(j=>dst[j]))||bestC2I; const H=mat3inv(C2I); if(!H) return null; return {H,inliers:bestIn.length}; }
+  if(bestIn.length<8) return null; const C2I=computeHomography(bestIn.map(j=>src[j]),bestIn.map(j=>dst[j]))||bestC2I; const H=mat3inv(C2I); if(!H) return null; return {H,inliers:bestIn.length,idx:bestIn}; }
 // Coarse global search: slide the projected court model over the line map (translations up to ±25% of the frame) and re-snap.
 function recaptureToLines(el,H,map){
   map=map||whitenessMap(el); const Hi=mat3inv(H); if(!Hi) return null; const pts=[]; for(let i=0;i<RF_SAMPLES.length;i+=2){ const sp=RF_SAMPLES[i]; const q=applyH(Hi,sp.x,sp.y); if(!q||q[2]<=0) continue; pts.push([q[0]*RFW,q[1]*RFH]); } if(pts.length<40) return null;
@@ -1251,7 +1260,9 @@ function refineToLines(el,H,opts={}){
     for(const sp of RF_SAMPLES){ const q=applyH(Hi,sp.x,sp.y); if(!q||q[2]<=0) continue; const px=q[0]*RFW, py=q[1]*RFH; if(px<2||py<2||px>RFW-3||py>RFH-3) continue; const q2=applyH(Hi,sp.x+sp.tx*0.3,sp.y+sp.ty*0.3); if(!q2||q2[2]<=0) continue; let dx=q2[0]*RFW-px, dy=q2[1]*RFH-py; const L=Math.hypot(dx,dy)||1; dx/=L; dy/=L; const nx=-dy, ny=dx; total++;
       let bestV=0.45, bestO=null; for(let o=-R;o<=R;o++){ const x=Math.round(px+nx*o), y=Math.round(py+ny*o); if(x<0||y<0||x>=RFW||y>=RFH) continue; const v=map[y*RFW+x]-0.012*Math.abs(o); if(v>bestV){ bestV=v; bestO=o; } }
       if(bestO===null) continue; src.push([sp.x,sp.y]); dst.push([(px+nx*bestO)/RFW,(py+ny*bestO)/RFH]); }
-    if(src.length<12) return result; const r=ransacH(src,dst,Math.max(2.5,R*0.35),120); if(!r) return result; cur=r.H; result={H:cur,inliers:r.inliers,total,matched:src.length,score:r.inliers/Math.max(1,total)}; }
+    if(src.length<12) return result; const r=ransacH(src,dst,Math.max(2.5,R*0.35),120); if(!r) return result; cur=r.H;
+    const cam=camFixed(); if(cam&&S.source){ const pf=pinnedFitPts(cur,cam,r.idx.map(j=>src[j]),r.idx.map(j=>dst[j]),S.source.width,S.source.height); if(pf&&pf.rmsPx<Math.max(6,R*0.6)){ cur=pf.H; result={H:cur,inliers:r.inliers,total,matched:src.length,score:r.inliers/Math.max(1,total),pinned:true,rmsPx:pf.rmsPx}; continue; } }
+    result={H:cur,inliers:r.inliers,total,matched:src.length,score:r.inliers/Math.max(1,total)}; }
   return result;
 }
 const CTW=480, CTH=270;
@@ -1283,6 +1294,43 @@ class CamTracker{
   H(){ if(!this.anchor||!this.anchor.H) return null; const A=[[this.A[0],this.A[1],this.A[2]],[this.A[3],this.A[4],this.A[5]],[this.A[6],this.A[7],this.A[8]]]; const Ai=mat3inv(A); if(!Ai) return null; const N=[[CTW,0,0],[0,CTH,0],[0,0,1]], Ni=[[1/CTW,0,0],[0,1/CTH,0],[0,0,1]]; return mat3mul(mat3mul(mat3mul(this.anchor.H,Ni),Ai),N); }
 }
 const I3=[[1,0,0],[0,1,0],[0,0,1]];
+// ---------- Fixed-camera model. Decompose H (court ← normalized image) into focal length, rotation and camera centre
+// (square pixels, principal point at the frame centre); recompose with the camera pinned at a given position.
+const v3dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2], v3cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]], v3len=a=>Math.hypot(a[0],a[1],a[2]);
+function decomposeH(Hic,W,Hh){
+  const Hci=mat3inv(Hic); if(!Hci) return null; const P=[[W,0,-W/2],[0,Hh,-Hh/2],[0,0,1]]; const H=mat3mul(P,Hci);
+  const h1=[H[0][0],H[1][0],H[2][0]], h2=[H[0][1],H[1][1],H[2][1]], h3=[H[0][2],H[1][2],H[2][2]];
+  const fa=-(h1[0]*h2[0]+h1[1]*h2[1])/(h1[2]*h2[2]); const fb=-((h1[0]*h1[0]+h1[1]*h1[1])-(h2[0]*h2[0]+h2[1]*h2[1]))/((h1[2]*h1[2])-(h2[2]*h2[2]));
+  const cands=[fa,fb].filter(v=>isFinite(v)&&v>0); if(!cands.length) return null; const f2=cands.length===2?Math.sqrt(fa*fb):cands[0]; const f=Math.sqrt(f2); if(!(f>W*0.3&&f<W*8)) return null;
+  const g=h=>[h[0]/f,h[1]/f,h[2]]; let g1=g(h1),g2=g(h2),g3=g(h3); const sc=(v3len(g1)+v3len(g2))/2; let r1=g1.map(v=>v/sc), r2=g2.map(v=>v/sc), t=g3.map(v=>v/sc);
+  { const n1=v3len(r1); r1=r1.map(v=>v/n1); const d=v3dot(r1,r2); r2=r2.map((v,i)=>v-d*r1[i]); const n2=v3len(r2); r2=r2.map(v=>v/n2); } let r3=v3cross(r1,r2);
+  let C=[-v3dot(r1,t),-v3dot(r2,t),-v3dot(r3,t)];
+  if(C[2]<0){ r1=r1.map(v=>-v); r2=r2.map(v=>-v); t=t.map(v=>-v); r3=v3cross(r1,r2); C=[-v3dot(r1,t),-v3dot(r2,t),-v3dot(r3,t)]; }
+  return {f,r1,r2,r3,t,C,P,W,Hh};
+}
+function composeH(dec,C){ const {f,r1,r2,r3,P}=dec; const t=[0,1,2].map(i=>-(r1[i]*C[0]+r2[i]*C[1]+r3[i]*C[2])); const Hpix=[[f*r1[0],f*r2[0],f*t[0]],[f*r1[1],f*r2[1],f*t[1]],[r1[2],r2[2],t[2]]]; const Pi=mat3inv(P); if(!Pi) return null; const Hci=mat3mul(Pi,Hpix); let Hic=mat3inv(Hci); if(!Hic) return null; const q=applyH(Hic,0.5,0.6); if(q&&q[2]<0) Hic=Hic.map(r=>r.map(v=>-v)); return Hic; }
+// Pin the camera at a fixed position: find the closest homography of the form K[R | -RC] (4 unknowns: rotation + zoom)
+// to the given H, by least squares on a grid of image points. Returns {H, residualPx} or null when the fit is poor.
+function rodrigues(w){ const th=Math.hypot(w[0],w[1],w[2]); if(th<1e-12) return I3; const k=[w[0]/th,w[1]/th,w[2]/th]; const K=[[0,-k[2],k[1]],[k[2],0,-k[0]],[-k[1],k[0],0]]; const K2=mat3mul(K,K); const s=Math.sin(th), c=1-Math.cos(th); return [0,1,2].map(i=>[0,1,2].map(j=>I3[i][j]+s*K[i][j]+c*K2[i][j])); }
+function pinnedFit(Hic,cam,W,Hh){
+  const dec=decomposeH(Hic,W,Hh); if(!dec) return null; const C=[cam.x,cam.y,cam.z];
+  const grid=[]; for(let gy=0.15;gy<=0.95;gy+=0.2) for(let gx=0.1;gx<=0.9;gx+=0.2){ const q=applyH(Hic,gx,gy); if(q) grid.push({u:gx,v:gy,x:q[0],y:q[1]}); } if(grid.length<6) return null;
+  const build=(w,lf)=>{ const Rw=rodrigues(w); const rot=col=>[0,1,2].map(i=>Rw[i][0]*col[0]+Rw[i][1]*col[1]+Rw[i][2]*col[2]); const d2={...dec,f:dec.f*Math.exp(lf),r1:rot(dec.r1),r2:rot(dec.r2),r3:rot(dec.r3)}; return composeH(d2,C); };
+  const cost=(th)=>{ const H2=build([th[0],th[1],th[2]],th[3]); if(!H2) return 1e9; const Hi=mat3inv(H2); if(!Hi) return 1e9; let e=0; for(const g of grid){ const q=applyH(Hi,g.x,g.y); if(!q) return 1e9; e+=((q[0]-g.u)*W)**2+((q[1]-g.v)*Hh)**2; } return e/grid.length; };
+  let th=[0,0,0,0], best=cost(th); const steps=[0.02,0.02,0.02,0.05];
+  for(let it=0;it<60;it++){ let improved=false; for(let k=0;k<4;k++){ for(const sgn of [1,-1]){ const cand=th.slice(); cand[k]+=sgn*steps[k]; const c=cost(cand); if(c<best){ best=c; th=cand; improved=true; } } } if(!improved){ for(let k=0;k<4;k++) steps[k]*=0.5; if(steps[0]<1e-4) break; } }
+  const H2=build([th[0],th[1],th[2]],th[3]); if(!H2) return null; return {H:H2,residualPx:Math.sqrt(best),f:dec.f*Math.exp(th[3])};
+}
+function pinnedFitPts(Hic,cam,src,dst,W,Hh){
+  const dec=decomposeH(Hic,W,Hh); if(!dec) return null; const C=[cam.x,cam.y,cam.z];
+  const build=(w,lf)=>{ const Rw=rodrigues(w); const rot=col=>[0,1,2].map(i=>Rw[i][0]*col[0]+Rw[i][1]*col[1]+Rw[i][2]*col[2]); return composeH({...dec,f:dec.f*Math.exp(lf),r1:rot(dec.r1),r2:rot(dec.r2),r3:rot(dec.r3)},C); };
+  const cost=(th)=>{ const H2=build([th[0],th[1],th[2]],th[3]); if(!H2) return 1e9; const Hi=mat3inv(H2); if(!Hi) return 1e9; let e=0; for(let i=0;i<src.length;i++){ const q=applyH(Hi,src[i][0],src[i][1]); if(!q) return 1e9; e+=((q[0]-dst[i][0])*W)**2+((q[1]-dst[i][1])*Hh)**2; } return e/src.length; };
+  let th=[0,0,0,0], best=cost(th); const steps=[0.03,0.03,0.03,0.08];
+  for(let it=0;it<80;it++){ let improved=false; for(let k=0;k<4;k++){ for(const sgn of [1,-1]){ const cand=th.slice(); cand[k]+=sgn*steps[k]; const c=cost(cand); if(c<best){ best=c; th=cand; improved=true; } } } if(!improved){ for(let k=0;k<4;k++) steps[k]*=0.5; if(steps[0]<2e-4) break; } }
+  const H2=build([th[0],th[1],th[2]],th[3]); if(!H2) return null; return {H:H2,rmsPx:Math.sqrt(best),f:dec.f*Math.exp(th[3])};
+}
+function camFixed(){ const c=P().settings.cam; return (c&&c.x!=null&&c.z!=null)?c:null; }
+function constrainH(Hic,cam,W,Hh){ if(!cam||cam.z==null) return Hic; const fit=pinnedFit(Hic,cam,W,Hh); if(!fit||fit.residualPx>0.03*W) return Hic; return fit.H; }
 // mean image displacement (px at 960 wide) of in-frame court sample points between two homographies
 function hShiftPx(Ha,Hb){ const A=mat3inv(Ha), B=mat3inv(Hb); if(!A||!B) return Infinity; let n=0,sum=0; for(let i=0;i<RF_SAMPLES.length;i+=4){ const sp=RF_SAMPLES[i]; const p=applyH(A,sp.x,sp.y), q=applyH(B,sp.x,sp.y); if(!p||!q||p[2]<=0||q[2]<=0) continue; if(p[0]<0||p[0]>1||p[1]<0||p[1]>1) continue; sum+=Math.hypot((p[0]-q[0])*RFW,(p[1]-q[1])*RFH); n++; } return n?sum/n:Infinity; }
 function lerpMat(D,u){ return D.map((row,i)=>row.map((v,j)=>I3[i][j]+(v-I3[i][j])*u)); }
@@ -1552,7 +1600,7 @@ function frame(ts){
 }
 function refreshRosterStatus(){ const t=now(); $$('#roster .prow').forEach((row,i)=>{}); const rows=[...$('#roster').querySelectorAll('.prow:not(.ballrow)')]; const ps=[...P().players.filter(p=>p.team==='A'),...P().players.filter(p=>p.team==='B')]; rows.forEach((row,i)=>{ const p=ps[i]; if(!p) return; const st=row.querySelector('.st'); const pos=playerPos(p,t); const cls=pos?'vis':p.kfs.length?'hid':''; st.className='st '+cls; st.textContent=pos?'表示中':p.kfs.length?'画面外':'未入力'; const cv=coverage(p.kfs); row.querySelector('.kfc').textContent=cv!=null?Math.round(cv*100)+'%':p.kfs.length+'KF'; if(cv!=null){ row.style.background=`linear-gradient(90deg, rgba(58,157,93,.18) ${Math.round(cv*100)}%, transparent ${Math.round(cv*100)}%)`; row.classList.toggle('done',cv>=0.9); } }); const br=$('#roster .ballrow'); if(br){ const bp=ballPos(t); const st=br.querySelector('.st'); st.className='st '+(bp?'vis':P().ball.kfs.length?'hid':''); st.textContent='ボール '+(bp?'':P().ball.kfs.length?'(非表示)':'(未入力)'); br.querySelector('.kfc').textContent=P().ball.kfs.length+'KF'; } }
 renderRoster(); renderCalibList(); applySettingsUI(); setVMode('track'); renderStats();
-if(new URLSearchParams(location.search).has('debug')) window.__ct={recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,LM,LANDMARKS,C,COURT_PATHS,ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
+if(new URLSearchParams(location.search).has('debug')) window.__ct={pinnedFitPts,estimateCamZ,decomposeH,composeH,constrainH,pinnedFit,recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,LM,LANDMARKS,C,COURT_PATHS,ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
 { const q=new URLSearchParams(location.search).get('src'); if(q){ S.project=newProject(); S.project.name=q.split('/').pop(); mount(new VideoSource(q)); renderRoster(); renderCalibList(); } }
 requestAnimationFrame(frame);
 })();

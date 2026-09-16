@@ -296,7 +296,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         <div class="actions"><button class="btn sm" id="labModeBtn" title="この場面の人物とボールに正解の枠を付けます。保存したデータはチーム判定にすぐ使われ、書き出せばPCでの追加学習に使えます">この場面をラベル付け</button><button class="btn sm go" id="labSaveBtn" hidden>このフレームを保存</button><button class="btn sm" id="labExitBtn" hidden>終了</button></div>
         <div id="labTools" hidden>
           <div class="actions" style="margin-top:6px"><button class="btn sm on" data-lc="A" id="labcA">A</button><button class="btn sm" data-lc="B" id="labcB">B</button><button class="btn sm" data-lc="X">審判・その他</button><button class="btn sm" data-lc="ball">ボール</button><button class="btn sm" data-lc="del">削除</button></div>
-          <div class="actions" style="margin-top:6px"><button class="btn sm" id="labDraftBtn" title="AI検出の結果を下書きとして入れます">自動検出で下書き</button><button class="btn sm" id="labClearFrameBtn">枠を全消去</button></div>
+          <div class="actions" style="margin-top:6px"><button class="btn sm" id="labDraftBtn" title="AI検出の結果を下書きとして入れます">自動検出で下書き</button><button class="btn sm" id="labOffCourtBtn" title="位置合わせを使って、コートの外に立っている人（ベンチ・観客）をまとめて「審判・その他」にします">コート外を審判・その他に</button><button class="btn sm" id="labClearFrameBtn">枠を全消去</button></div>
           <p class="note" id="labHint"><b>直したら必ず「このフレームを保存」（Enter）</b>。「次の場面へ」を押した場合は自動で保存されます。選んだ種類で、動画上をドラッグして枠を描きます。既にある枠をクリックすると今の種類に変わり、ドラッグで移動、角をドラッグで大きさ変更。ボールはクリックだけでも置けます。キー: 1=A 2=B 3=審判 4=ボール 0=削除</p>
         </div>
         <p class="note" id="labNote">保存済み 0フレーム</p>
@@ -874,10 +874,12 @@ async function labDraft(){ if(!S.source||S.source.kind==='youtube') return toast
   else { try{ toast('検出中…',1500); const r=await detectFrame(S.source.el,S.source.width,S.source.height); persons=r.persons; balls=r.balls; }catch(e){ return toast('検出できませんでした: '+e.message,4000); } }
   const sup=labSupervisor(); const W=S.source.width,H=S.source.height; const boxes=[];
   const feats=persons.map(d=>{ const col=sampleColor(S.source.el,d,W,H); return col?colorFeat(col):null; });
-  let split=null; if(!sup){ const idx=feats.map((f,i)=>f?i:-1).filter(i=>i>=0); if(idx.length>=4){ const km=kmeans(idx.map(i=>feats[i]),2,20); if(km.centers.length===2){ const bright=km.centers[0][0]>=km.centers[1][0]?0:1; split={}; idx.forEach((i,j)=>{ split[i]=km.labels[j]===bright?'A':'B'; }); } } }
+  const offs=persons.map(d=>labOffCourt(d,t)); let split=null; if(!sup){ const idx=feats.map((f,i)=>(f&&!offs[i])?i:-1).filter(i=>i>=0); if(idx.length>=4){ const km=kmeans(idx.map(i=>feats[i]),2,20); if(km.centers.length===2){ const bright=km.centers[0][0]>=km.centers[1][0]?0:1; split={}; idx.forEach((i,j)=>{ split[i]=km.labels[j]===bright?'A':'B'; }); } } }
   persons.forEach((d,i)=>{ let c=d.team&&d.team!=='X'?d.team:null; if(!c&&sup&&feats[i]) c=sup.classify(feats[i]); if(!c&&split&&split[i]) c=split[i]; if(!c) c=d.team==='X'?'X':'A'; boxes.push({c,u:d.u,v:d.v,w:d.w,h:d.h}); });
   for(const b of balls) boxes.push({c:'ball',u:b.u,v:b.v,w:b.w,h:b.h});
-  if(!S.lab.cur) S.lab.cur={t,boxes:[]}; S.lab.cur.boxes=boxes; renderLab(); toast(`下書き: 人物 ${persons.length}・ボール ${balls.length}。種類が違う枠は、正しい種類を選んでクリックで直してください`,5000); }
+  if(!S.lab.cur) S.lab.cur={t,boxes:[]}; S.lab.cur.boxes=boxes; const nx=labMarkOffCourt(true); renderLab(); toast(`下書き: 人物 ${persons.length}・ボール ${balls.length}${nx?`（コート外の ${nx}人は「審判・その他」にしました）`:''}。種類が違う枠は、正しい種類を選んでクリックで直してください`,6000); }
+function labOffCourt(b,t){ const q=imgToCourt(b.u+b.w/2,b.v+b.h,t); if(!q) return null; const M=(parseFloat($('#courtMargin').value)||0.7)+0.8; return (q[0]<-M||q[0]>C.L+M||q[1]<-M||q[1]>C.W+M); }
+function labMarkOffCourt(quiet){ const cur=S.lab.cur; if(!cur) return 0; const t=now(); let n=0, known=false; for(const b of cur.boxes){ if(b.c==='ball') continue; const off=labOffCourt(b,t); if(off===null) continue; known=true; if(off&&b.c!=='X'){ b.c='X'; n++; } } if(!quiet){ if(!known) toast('この時刻の位置合わせがないため、コートの内外を判定できません',4000); else toast(`コート外の ${n}人を「審判・その他」にしました`,3000); } return n; }
 function labHit(pt){ const cur=S.lab.cur; if(!cur) return null; const r=pt.r; const tol=8; let best=null;
   for(let i=cur.boxes.length-1;i>=0;i--){ const b=cur.boxes[i]; const x0=r.x+b.u*r.w,y0=r.y+b.v*r.h,x1=x0+b.w*r.w,y1=y0+b.h*r.h;
     const corners=[[x0,y0,'tl'],[x1,y0,'tr'],[x0,y1,'bl'],[x1,y1,'br']]; for(const [cx,cy,k] of corners){ if(Math.hypot(cx-pt.px,cy-pt.py)<tol) return {i,b,corner:k}; }
@@ -943,7 +945,7 @@ $('#labModeBtn').addEventListener('click',()=>{ if(!S.source) return toast('先�
 $('#labSaveBtn').addEventListener('click',labSaveFrame); $('#labExitBtn').addEventListener('click',labExit);
 async function labExit(){ if(S.vmode==='label'&&labDirty()){ const v=await ask('この場面の枠はまだ保存されていません。',[{label:'保存せず終了',value:'drop'},{label:'キャンセル',value:null},{label:'保存して終了',value:'save',primary:true}]); if(!v) return; if(v==='save'){ const ok=await labSaveFrame(); if(!ok) return; } } setVMode('track'); }
 $$('#labTools [data-lc]').forEach(b=>b.addEventListener('click',()=>labSetCls(b.dataset.lc)));
-$('#labDraftBtn').addEventListener('click',labDraft); $('#labClearFrameBtn').addEventListener('click',()=>{ if(S.lab.cur) S.lab.cur.boxes=[]; });
+$('#labDraftBtn').addEventListener('click',labDraft); $('#labOffCourtBtn').addEventListener('click',()=>labMarkOffCourt(false)); $('#labClearFrameBtn').addEventListener('click',()=>{ if(S.lab.cur) S.lab.cur.boxes=[]; });
 $('#labNextBtn').addEventListener('click',async()=>{ if(!S.source) return; if(S.vmode==='label'&&labDirty()){ const ok=await labSaveFrame(); if(!ok) return; await new Promise(r=>setTimeout(r,300)); } const dur=S.source.duration||1e9; const t=Math.min(dur-0.1,now()+15); await (S.source.seekAsync?S.source.seekAsync(t):Promise.resolve(seek(t))); if(S.vmode==='label'){ await new Promise(r=>setTimeout(r,150)); const cur=labCurFrame(); S.lab.cur={t:now(),boxes:cur?cur.boxes.map(b=>({...b})):[]}; if(!cur) await labDraft(); renderLab(); } else setVMode('label'); });
 async function readZip(buf){ const dv=new DataView(buf), u8=new Uint8Array(buf); let eocd=-1; for(let i=buf.byteLength-22;i>=Math.max(0,buf.byteLength-70000);i--){ if(dv.getUint32(i,true)===0x06054b50){ eocd=i; break; } } if(eocd<0) throw new Error('ZIPではありません');
   const n=dv.getUint16(eocd+10,true), cd=dv.getUint32(eocd+16,true); const dec=new TextDecoder(); const out=[]; let p=cd;

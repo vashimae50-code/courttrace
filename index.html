@@ -292,7 +292,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         <h3>位置合わせ（カメラ補正）</h3>
         <div class="actions">
           <button class="btn sm" id="calibModeBtn">目印を置く</button>
-          <button class="btn sm" id="newCalibBtn" title="カメラの向きが変わったときに、その見え方用の位置合わせを追加">カメラの向きを追加</button>
+          <button class="btn sm" id="newCalibBtn" title="別の場面（左・右・コート全体）の位置合わせを追加します。多いほど追従が安定します">この時刻に追加（左／右／全体）</button>
           <button class="btn sm danger" id="delCalibBtn">削除</button>
         </div>
         <button class="btn sm" id="snapBtn" hidden style="margin-top:6px;width:100%">白線に吸着して微調整</button>
@@ -943,7 +943,9 @@ function renderCalibList(){
 }
 // ---- calibration wizard: left court → confirm → (move time) → right court → confirm
 const WIZ_ORDER={ L:['左 c0','左 c1','左 f0','左 f1','左 tt','左 k0','左 k1','左 t0','左 t1','左 fm','左 rim','cc','h0','h1'], R:['右 c0','右 c1','右 f0','右 f1','右 tt','右 k0','右 k1','右 t0','右 t1','右 fm','右 rim','cc','h0','h1'] };
-const WIZ_NAME={L:'左コート',R:'右コート'};
+const WIZ_NAME={L:'左コート',R:'右コート',C:'コート全体（中央）'};
+WIZ_ORDER.C=['cc','h0','h1','左 tt','右 tt','左 f0','右 f0','左 f1','右 f1','左 c0','右 c0','左 c1','右 c1','左 k0','右 k0','左 k1','右 k1','cb','ct'];
+const wizActive=w=>!!w&&(w.phase==='L'||w.phase==='R'||w.phase==='C');
 S.wiz=null;
 const wizCalib=()=>S.wiz?P().calibs.find(k=>k.id===S.wiz.calibId):null;
 function wizNext(after){ const c=wizCalib(); if(!c) return; const order=WIZ_ORDER[S.wiz.phase]||[]; const start=after?order.indexOf(after)+1:0; for(let i=0;i<order.length;i++){ const id=order[(start+i)%order.length]; if(!c.pts[id]&&!S.wiz.skipped[id]){ S.lm=id; return; } } S.lm=null; }
@@ -951,7 +953,7 @@ function wizStart(phase,calib){ S.wiz={phase,calibId:calib.id,skipped:{}}; wizNe
 function wizSkip(){ if(!S.wiz||!S.lm) return; S.wiz.skipped[S.lm]=true; const cur=S.lm; wizNext(cur); renderCalibList(); }
 function snapCalib(c,radii){ if(!S.source||S.source.kind==='youtube'||!c||!c.H) return null; try{ const rf=refineToLines(S.source.el,c.H,{radii:radii||[30,20,12,6,4]}); if(!rf||rf.inliers<40||rf.score<0.28) return rf||null; const shift=hShiftPx(c.H,rf.H); if(!(shift<60)) return {...rf,rejected:true}; const Hi=mat3inv(rf.H); if(!Hi) return null; const backup=JSON.parse(JSON.stringify(c.pts)); for(const id in c.pts){ const l=LM[id]; const q=applyH(Hi,l.x,l.y); if(q&&q[2]>0) c.pts[id]=[q[0],q[1]]; } recomputeCalib(c); if(!c.H||c.err>0.02){ c.pts=backup; recomputeCalib(c); return {...rf,rejected:true}; } c.snapped=true; scheduleSave(); return rf; }catch(e){ console.warn(e); return null; } }
 function wizConfirm(){ const c=wizCalib(); if(!c||!c.H||Object.keys(c.pts).length<4) return toast('点が4つ以上そろい、緑の線が合ってから確定してください'); if(!c.thumb) captureThumb(c);
-  const rf=snapCalib(c); if(rf&&!rf.rejected&&rf.inliers>=40&&rf.score>=0.28) toast(`白線に合わせて微調整しました（一致 ${rf.inliers}/${rf.total} 点）`,4000); if(S.wiz.phase==='L'){ S.wiz.phase='Ldone'; S.lm=null; toast('左コートを確定しました。次は右コートが映っている時刻まで動画を進めてください。',5000); } else { S.wiz.phase='done'; S.lm=null; setVMode('track'); toast('右コートも確定しました。位置合わせ完了です。名簿で選手を選んで追跡を始めましょう。',5000); } renderCalibList(); }
+  const rf=snapCalib(c); if(rf&&!rf.rejected&&rf.inliers>=40&&rf.score>=0.28) toast(`白線に合わせて微調整しました（一致 ${rf.inliers}/${rf.total} 点）`,4000); if(S.wiz.phase==='L'){ S.wiz.phase='Ldone'; S.lm=null; toast('左コートを確定しました。次は右コートが映っている時刻まで動画を進めてください。',5000); } else if(S.wiz.phase==='C'){ S.wiz.phase='done'; S.lm=null; setVMode('track'); toast('位置合わせを確定しました。位置合わせが増えるほど追従が安定します。',5000); } else { S.wiz.phase='done'; S.lm=null; setVMode('track'); toast('右コートも確定しました。位置合わせ完了です。名簿で選手を選んで追跡を始めましょう。',5000); } renderCalibList(); }
 function wizStartRightShift(){ const t=now(); const left=wizCalib(); if(left&&Math.abs(left.t-t)<0.5) return toast('先に、右コートが映っている時刻まで動画を進めてください（下のタイムラインやスライダーで移動）',5000); if(P().calibs.some(k=>Math.abs(k.t-t)<0.05)) return toast('同じ時刻に既に位置合わせがあります'); const c={id:uid(),t,pts:{},H:null,Hi:null}; recomputeCalib(c); captureThumb(c); P().calibs.push(c); P().calibs.sort((a,b)=>a.t-b.t); S.viewLast=c; scheduleSave(); wizStart('R',c); toast(`${fmt(t)} から右コートの位置合わせを始めます。光っている点の場所を動画でクリックしてください。`,5000); }
 function wizStartRightSame(){ const c=wizCalib(); if(!c) return; S.wiz.phase='R'; S.wiz.skipped={}; wizNext(); renderCalibList(); }
 function wizBegin(){ const t=now(); const c=ensureCalib(t); if(S.wiz&&S.wiz.calibId===c.id&&S.wiz.phase!=='done'){ setVMode('calib'); renderCalibList(); return; } wizStart('L',c); }
@@ -967,8 +969,8 @@ function renderWizard(){
   const c=wizCalib(); if(!c){ box.hidden=true; return; } box.hidden=false; const n=Object.keys(c.pts).length; const ok=c.H&&n>=4;
   const btns=$('#wizBtns'); btns.innerHTML='';
   const mk=(label,fn,go)=>{ const b=document.createElement('button'); b.className='btn sm'+(go?' go':''); b.textContent=label; b.addEventListener('click',fn); btns.appendChild(b); };
-  if(w.phase==='L'||w.phase==='R'){
-    $('#wizTitle').textContent=(w.phase==='L'?'① ':'② ')+WIZ_NAME[w.phase]; $('#wizProg').textContent=`${n}点${ok?' ✓':' / 4点以上'}`;
+  if(wizActive(w)){
+    $('#wizTitle').textContent=(w.phase==='L'?'① ':w.phase==='R'?'② ':'＋ ')+WIZ_NAME[w.phase]; $('#wizProg').textContent=`${n}点${ok?' ✓':' / 4点以上'}`;
     $('#wizCur').textContent = S.lm ? `次の点: 「${LM[S.lm].name}」 → 動画でクリック` : (ok ? '点を置き終えました。緑の線が合っていれば確定してください。' : '候補の点を使い切りました。ボードで別の点をクリックするか、時刻を変えてやり直してください。');
     if(S.lm) mk('この点は映っていない（スキップ）',wizSkip);
     mk(WIZ_NAME[w.phase]+'を確定',wizConfirm,ok);
@@ -986,7 +988,7 @@ $('#promptModeBtn').addEventListener('click',()=>{ if(S.vmode==='calib') setVMod
 $('#promptUndoBtn').addEventListener('click',()=>{ if(!P().prompts.length) return; P().prompts.pop(); scheduleSave(); renderPromptCount(); });
 function renderPromptCount(){ const ps=P().prompts||[]; const byE={}; for(const q of ps) byE[q.entity]=(byE[q.entity]||0)+1; $('#promptCount').textContent=`${ps.length}件（${Object.keys(byE).length}人分）`; }
 $('#goTrackBtn').addEventListener('click',()=>{ setVMode('track'); toast('名簿で選手を選び、動画上でその選手の足元をクリックしてください（一時停止中に）',6000); });
-$('#newCalibBtn').addEventListener('click',()=>{ const t=now(); if(P().calibs.some(c=>Math.abs(c.t-t)<0.05)) return toast('同じ時刻に既に位置合わせがあります'); const c={id:uid(),t,pts:{},H:null,Hi:null}; recomputeCalib(c); captureThumb(c); P().calibs.push(c); P().calibs.sort((a,b)=>a.t-b.t); S.lm=null; S.ptOrder=[]; S.viewLast=c; scheduleSave(); setVMode('calib'); toast('新しいカメラの向き（ビュー）を追加しました。この見え方のときに使う位置合わせになります。ボードで点を選び、動画の同じ場所をクリックしてください。',6000); renderCalibList(); });
+$('#newCalibBtn').addEventListener('click',async()=>{ const t=now(); if(P().calibs.some(c=>Math.abs(c.t-t)<0.05)) return toast('同じ時刻に既に位置合わせがあります'); const view=await ask(`${fmt(t)} の場面に位置合わせを追加します。いま映っているのはどこですか？`,[{label:'キャンセル',value:null},{label:'左コート',value:'L'},{label:'右コート',value:'R'},{label:'コート全体（中央）',value:'C',primary:true}]); if(!view) return; const c={id:uid(),t,pts:{},H:null,Hi:null}; recomputeCalib(c); captureThumb(c); P().calibs.push(c); P().calibs.sort((a,b)=>a.t-b.t); S.ptOrder=[]; S.viewLast=c; scheduleSave(); wizStart(view,c); toast(`${fmt(t)} に「${WIZ_NAME[view]}」の位置合わせを追加しました。ボードで光る点と同じ場所を動画でクリックしてください（4点以上）。`,6000); });
 $('#undoPtBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c) return; const id=S.ptOrder.pop()||Object.keys(c.pts).pop(); if(!id) return; delete c.pts[id]; recomputeCalib(c); S.lm=id; scheduleSave(); renderCalibList(); toast('「'+LM[id].name+'」を取り消しました'); });
 $('#clearPtsBtn').addEventListener('click',async()=>{ const c=calibAt(now()); if(!c||!Object.keys(c.pts).length) return; if(!(await confirmAsk('この位置合わせの点をすべて消しますか？'))) return; c.pts={}; S.ptOrder=[]; S.lm=null; recomputeCalib(c); scheduleSave(); renderCalibList(); });
 function recomputeScan(){ const sc=S.scan; if(!sc) return 0; let n=0; const byId2=Object.fromEntries(P().calibs.map(c=>[c.id,c])); const conv=(pt,t)=>{ const e=scanH(t); if(e){ const r=applyH(e.H,pt.fu,pt.fv); return r?[r[0],r[1]]:null; } const c=pt.cid&&byId2[pt.cid]; if(c&&c.H){ const r=applyH(c.H,pt.fu,pt.fv); return r?[r[0],r[1]]:null; } if(P().calibs.length===1&&P().calibs[0].H){ const r=applyH(P().calibs[0].H,pt.fu,pt.fv); return r?[r[0],r[1]]:null; } return null; };
@@ -1022,7 +1024,7 @@ ov.addEventListener('pointerdown',e=>{
     for(const id in c.pts){ const [x,y]=[pt.r.x+c.pts[id][0]*pt.r.w, pt.r.y+c.pts[id][1]*pt.r.h]; if(Math.hypot(x-pt.px,y-pt.py)<10){ S.calibDrag={c,id}; ov.setPointerCapture(e.pointerId); S.lm=id; renderCalibList(); return; } }
     if(pt.u<0||pt.u>1||pt.v<0||pt.v>1) return;
     if(!S.lm){ toast('先に右のボード（コート図）で、置きたい点をクリックしてください',3500); return; }
-    c.pts[S.lm]=[pt.u,pt.v]; S.ptOrder=S.ptOrder.filter(x=>x!==S.lm).concat(S.lm); recomputeCalib(c); captureThumb(c); scheduleSave(); const placedName=LM[S.lm].name; const placedId=S.lm; S.lm=null; if(S.wiz&&(S.wiz.phase==='L'||S.wiz.phase==='R')&&S.wiz.calibId===c.id) wizNext(placedId); renderCalibList();
+    c.pts[S.lm]=[pt.u,pt.v]; S.ptOrder=S.ptOrder.filter(x=>x!==S.lm).concat(S.lm); recomputeCalib(c); captureThumb(c); scheduleSave(); const placedName=LM[S.lm].name; const placedId=S.lm; S.lm=null; if(wizActive(S.wiz)&&S.wiz.calibId===c.id) wizNext(placedId); renderCalibList();
     const n=Object.keys(c.pts).length;
     if(n<4) toast(`「${placedName}」を置きました（${n}/4）。`+(S.lm?`次は「${LM[S.lm].name}」`:'次の点をボードで選んでください'),3000);
     else if(c.H) toast(n===4?'4点そろいました。緑の線が映像のコートに合っていれば「追跡に進む」。ずれていれば点を足すか直してください。':'点を追加しました。緑の線の合い方を確認してください。',4000);
@@ -1572,7 +1574,7 @@ function guideState(){
 }
 function guideWizard(n){
   const w=S.wiz; if(!w) return null; const c=wizCalib(); if(!c) return null; const ok=c.H&&Object.keys(c.pts).length>=4;
-  if(w.phase==='L'||w.phase==='R'){ const nm=WIZ_NAME[w.phase]; const step=w.phase==='L'?'①':'②';
+  if(wizActive(w)){ const nm=WIZ_NAME[w.phase]; const step=w.phase==='L'?'①':w.phase==='R'?'②':'＋';
     if(S.lm) return {n:2,text:`${step} ${nm}（${n}点）: ボードで光っている「${LM[S.lm].name}」と同じ場所を、動画でクリックしてください。映っていなければ「スキップ」。4点以上で緑の線が合ったら「${nm}を確定」。`,action: ok?[nm+'を確定',wizConfirm]:['この点は映っていない（スキップ）',wizSkip]};
     return {n:2,text: ok?`${step} ${nm}の点を置き終えました。緑の線が映像のコートに合っていれば「${nm}を確定」を押してください。`:`${step} ${nm}: 点が足りません（${n}点）。ボードで別の点をクリックして追加するか、コートがよく映っている時刻に移動してやり直してください。`,action: ok?[nm+'を確定',wizConfirm]:null};
   }

@@ -35,6 +35,7 @@ class _Tee:
     def isatty(self): return False
     def fileno(self): return self.stream.fileno()
 
+_ENV0 = dict(os.environ)  # environment before ultralytics touches it (used for the export subprocess)
 _LOG = Path(__file__).resolve().parent / 'train_log.txt'
 sys.stdout = _Tee(sys.stdout, _LOG); sys.stderr = _Tee(sys.stderr, _LOG)
 print(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} train_players.py {' '.join(sys.argv[1:])}")
@@ -104,7 +105,23 @@ def main():
     print('学習完了:', best)
 
     # export for the browser: 640 square, same output layout as the bundled yolov10 models ([1,300,6] x1,y1,x2,y2,score,class)
-    onnx = YOLO(str(best)).export(format='onnx', imgsz=640, opset=17, simplify=True, dynamic=False)
+    # NOTE: exporting inside the training process yields the raw [1,7,8400] head; a fresh interpreter gives the
+    # end-to-end [1,300,6] layout the app expects, so run the export in a subprocess.
+    import subprocess
+    code = ("from ultralytics import YOLO; import sys; "
+            "print(YOLO(sys.argv[1]).export(format='onnx', imgsz=640, opset=17, simplify=True, dynamic=False))")
+    proc = subprocess.run([sys.executable, '-c', code, str(best)], capture_output=True, text=True, encoding='utf-8', errors='replace', env=_ENV0)
+    sys.stdout.write(proc.stdout); sys.stderr.write(proc.stderr)
+    onnx = best.with_suffix('.onnx')
+    if proc.returncode != 0 or not onnx.exists():
+        sys.exit('ONNX への書き出しに失敗しました（上のメッセージを確認してください）')
+    try:
+        import numpy as np, onnxruntime as ort
+        sess = ort.InferenceSession(str(onnx), providers=['CPUExecutionProvider'])
+        shape = sess.run(None, {sess.get_inputs()[0].name: np.zeros((1, 3, 640, 640), np.float32)})[0].shape
+        print('ONNX 出力の形:', shape, '（[1, 300, 6] が期待値。[1, 7, 8400] でもアプリは対応済み）')
+    except Exception as e:
+        print('ONNX の確認をスキップ:', e)
     dst = Path('model'); dst.mkdir(exist_ok=True)
     shutil.copy(onnx, dst / 'custom.onnx')
     print('=' * 60); print('DONE  ブラウザ用モデル:', (dst / 'custom.onnx').resolve()); print('=' * 60)

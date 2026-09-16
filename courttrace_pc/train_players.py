@@ -20,6 +20,27 @@ import argparse, os, random, shutil, sys, time, zipfile
 from pathlib import Path
 
 
+class _Tee:
+    """Mirror everything printed to the console into train_log.txt (so the result survives a closed window)."""
+    def __init__(self, stream, path):
+        self.stream = stream; self.f = open(path, 'a', encoding='utf-8', errors='replace')
+    def write(self, s):
+        try: self.stream.write(s)
+        except Exception: pass
+        self.f.write(s); self.f.flush()
+    def flush(self):
+        try: self.stream.flush()
+        except Exception: pass
+        self.f.flush()
+    def isatty(self): return False
+    def fileno(self): return self.stream.fileno()
+
+_LOG = Path(__file__).resolve().parent / 'train_log.txt'
+sys.stdout = _Tee(sys.stdout, _LOG); sys.stderr = _Tee(sys.stderr, _LOG)
+print(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} train_players.py {' '.join(sys.argv[1:])}")
+print(f"log: {_LOG}")
+
+
 def unpack(zips, root: Path):
     img_dir = root / 'images'; lab_dir = root / 'labels'
     for d in (img_dir / 'train', img_dir / 'val', lab_dir / 'train', lab_dir / 'val'):
@@ -83,7 +104,7 @@ def main():
     onnx = YOLO(str(best)).export(format='onnx', imgsz=640, opset=17, simplify=True, dynamic=False)
     dst = Path('model'); dst.mkdir(exist_ok=True)
     shutil.copy(onnx, dst / 'custom.onnx')
-    print('ブラウザ用モデル:', dst / 'custom.onnx')
+    print('=' * 60); print('DONE  ブラウザ用モデル:', (dst / 'custom.onnx').resolve()); print('=' * 60)
     print('\n次にやること:')
     print('  1) アプリの「AI自動解析 → カスタム検出モデル」で model/custom.onnx を選ぶ（自分だけで使う）')
     print('  2) みんなで使うなら courttrace リポジトリの model/custom.onnx としてアップロード（自動で使われます）')

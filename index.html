@@ -249,6 +249,8 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         <div class="actions"><button class="btn" id="autoAllBtn" style="font-weight:600">動画全体を自動解析</button><button class="btn sm" id="scanBtn">範囲だけ解析</button><button class="btn sm" id="stopScanBtn" hidden>停止</button></div>
         <div class="field" style="margin-top:6px"><label>人物検出の間隔</label><select id="scanDt" style="width:84px"><option value="0.25">0.25秒</option><option value="0.5" selected>0.5秒</option><option value="1">1秒</option></select></div>
         <div class="field"><label>検出モデル</label><select id="yoloModel" style="width:120px"><option value="s">精度重視（v10s）</option><option value="n">速さ重視（v10n）</option></select></div>
+        <div class="field"><label>カスタム学習モデル <span class="hint">.onnx</span></label><input type="file" id="customModel" accept=".onnx" style="max-width:150px"><button class="btn sm" id="customModelClear" hidden>解除</button></div>
+        <p class="note" id="customModelNote">教師データで追加学習したモデル（courttrace_pc/train_players.py が作る model/custom.onnx）をここで選ぶと、以後の検出に使われます。リポジトリの model/custom.onnx に置いた場合は自動で使われます。</p>
         <div class="field"><label>白線に吸着して補正（推奨）</label><input type="checkbox" id="useLines" checked></div>
         <div class="field"><label>コート外の許容（m）</label><input type="number" id="courtMargin" min="0" max="5" step="0.1" value="0.7" title="この距離までコートの外にいる人も対象にする。ベンチや観客を拾うなら小さく、位置合わせが粗いなら大きく"></div>
         <div class="field"><label>解析速度（再生倍率）</label><select id="scanRate" style="width:84px"><option value="1" selected>1倍</option><option value="1.5">1.5倍</option><option value="2">2倍</option></select></div>
@@ -286,6 +288,18 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
           <button class="btn sm" id="stopTrackBtn" hidden>停止</button>
         </div>
         <p class="note" id="detNote">ブラウザ内の物体検出(COCO-SSD)で人物枠を出します。枠をクリックすると足元がKFになります。自動追跡は枠の連続性で追い、見失うと止まります。</p>
+      </section>
+
+      <section id="labSec">
+        <h3>教師データ作成 <span class="hint">人物・チーム・ボール</span></h3>
+        <div class="actions"><button class="btn sm" id="labModeBtn" title="この場面の人物とボールに正解の枠を付けます。保存したデータはチーム判定にすぐ使われ、書き出せばPCでの追加学習に使えます">この場面をラベル付け</button><button class="btn sm go" id="labSaveBtn" hidden>このフレームを保存</button><button class="btn sm" id="labExitBtn" hidden>終了</button></div>
+        <div id="labTools" hidden>
+          <div class="actions" style="margin-top:6px"><button class="btn sm on" data-lc="A" id="labcA">A</button><button class="btn sm" data-lc="B" id="labcB">B</button><button class="btn sm" data-lc="X">審判・その他</button><button class="btn sm" data-lc="ball">ボール</button><button class="btn sm" data-lc="del">削除</button></div>
+          <div class="actions" style="margin-top:6px"><button class="btn sm" id="labDraftBtn" title="AI検出の結果を下書きとして入れます">自動検出で下書き</button><button class="btn sm" id="labClearFrameBtn">枠を全消去</button></div>
+          <p class="note" id="labHint">選んだ種類で、動画上をドラッグして枠を描きます。既にある枠をクリックすると今の種類に変わり、ドラッグで移動、角をドラッグで大きさ変更。ボールはクリックだけでも置けます。キー: 1=A 2=B 3=審判 4=ボール 0=削除</p>
+        </div>
+        <p class="note" id="labNote">保存済み 0フレーム</p>
+        <div class="actions"><button class="btn sm" id="labNextBtn" title="15秒先へ移動してラベル付けを続けます">次の場面へ（+15秒）</button><button class="btn sm" id="labExportBtn" title="画像とYOLO形式のラベルをZIPにまとめます（PCでの追加学習用）">教師データを書き出し(ZIP)</button><button class="btn sm" id="labReteamBtn" title="保存したラベルの色から、解析結果のチーム判定をやり直します">ラベルでチーム判定をやり直す</button><button class="btn sm" id="labClearAllBtn">全削除</button></div>
       </section>
 
       <section>
@@ -492,7 +506,8 @@ const S = {
   project: null,
   source: null,
   selected: null,        // 'ball' | playerId
-  vmode: 'track',        // 'track' | 'calib'
+  vmode: 'track',        // 'track' | 'calib' | 'label'
+  lab: {frames:[], cls:'A', cur:null, drag:null, key:null},
   tool: 'select',
   penColor: '#f4f1ea', penWidth: 0.14,
   lm: LANDMARKS[0].id,
@@ -670,7 +685,7 @@ async function openYouTube(id,startT,keepProject){
   try{ toast('YouTubeプレイヤーを読み込み中…'); await loadYT(); }catch(e){ showEmpty('YOUTUBE BLOCKED', ytBlockedHelp()); return; }
   if(!keepProject){ S.project=newProject(); S.project.name='youtube_'+id; }
   const src=new YouTubeSource(id,startT);
-  src.onready=()=>{ resizeAll(); if(!keepProject) loadAutosave(src.key); renderRoster(); };
+  src.onready=()=>{ resizeAll(); if(!keepProject) loadAutosave(src.key); renderRoster(); labLoad(src.key); };
   mount(src); renderRoster(); renderCalibList(); applySettingsUI();
 }
 function openYouTubeFromInput(){ const r=parseYouTube($('#ytUrl').value); if(!r) return toast('YouTubeのURLとして読めませんでした（例: https://www.youtube.com/watch?v=XXXXXXXXXXX）',5000); openYouTube(r.id,r.t,false); }
@@ -685,7 +700,7 @@ function mount(src){
   viewport.insertBefore(src.el, ov); emptyMsg.hidden=true;
   src.rate=parseFloat($('#rate').value);
   $('#vinfo').textContent = src.kind==='demo' ? 'デモ映像（合成）' : src.kind==='youtube' ? 'YouTube: '+src.id+'（AI検出は使えません）' : src.name;
-  if(src.kind==='video'){ src.el.addEventListener('loadedmetadata',()=>{ resizeAll(); loadAutosave(src.key); }); src.el.addEventListener('ended',()=>updatePlayBtn()); }
+  if(src.kind==='video'){ src.el.addEventListener('loadedmetadata',()=>{ resizeAll(); loadAutosave(src.key); labLoad(src.key); }); src.el.addEventListener('ended',()=>updatePlayBtn()); }
   resizeAll(); updatePlayBtn();
 }
 $('#fileIn').addEventListener('change', e=>{ const f=e.target.files[0]; if(!f) return; S.project=newProject(); S.project.name=f.name; mount(new VideoSource(f)); renderRoster(); renderCalibList(); e.target.value=''; });
@@ -826,6 +841,7 @@ function drawOverlay(){
   if(c&&c.Hi&&P().settings.showProj){ g.strokeStyle= S.vmode==='calib' ? 'rgba(80,220,120,.9)' : 'rgba(255,255,255,.35)'; g.lineWidth=1.5; g.lineJoin='round';
     for(const path of COURT_PATHS){ g.beginPath(); let pen=false; for(const p of path){ const q=applyH(c.Hi,p[0],p[1]); if(!q||q[2]<=0||Math.abs(q[0])>3||Math.abs(q[1])>3){pen=false;continue;} const px=I(q[0],q[1]); pen?g.lineTo(...px):g.moveTo(...px); pen=true; } g.stroke(); } }
   if(S.tracking&&S.liveH){ const inl=S.liveInl|0; const col=inl<0?'#e0463c':inl<25?'#e0a020':'#4fd07a'; g.fillStyle='rgba(0,0,0,.6)'; g.fillRect(r.x+8,r.y+8,190,26); g.fillStyle=col; g.beginPath(); g.arc(r.x+22,r.y+21,6,0,Math.PI*2); g.fill(); g.fillStyle='#fff'; g.font='12px "Noto Sans JP",sans-serif'; g.textAlign='left'; g.textBaseline='middle'; g.fillText(inl<0?'カメラ追跡: 失敗（前の推定を維持）':`カメラ追跡: 良好（${inl}点）`,r.x+34,r.y+21); const rf=S.liveRefine; if(rf){ g.fillStyle='rgba(0,0,0,.6)'; g.fillRect(r.x+8,r.y+38,190,22); g.fillStyle=rf.rejected?'#e0a020':'#4fd07a'; g.font='11px "Noto Sans JP",sans-serif'; g.fillText(`白線吸着: ${rf.rejected?'保留':'OK'} ${rf.inliers}/${rf.total}`,r.x+14,r.y+49); } }
+  if(S.vmode==='label'){ drawLabelOverlay(g,r,I); return; }
   if(S.vmode==='calib'){
     if(c) for(const id in c.pts){ const [px,py]=I(...c.pts[id]); const cur=id===S.lm; const bad=c.bad&&c.bad[id]; g.beginPath(); g.arc(px,py,cur?8:6,0,Math.PI*2); g.fillStyle=cur?'#e8b04a':bad?'#e0463c':'#4fd07a'; g.fill(); g.strokeStyle='#000'; g.lineWidth=1.5; g.stroke(); g.fillStyle='#fff'; g.font='11px "Noto Sans JP",sans-serif'; g.textAlign='left'; g.shadowColor='#000'; g.shadowBlur=3; g.fillText(LM[id].name,px+9,py-8); g.shadowBlur=0; }
     return;
@@ -839,6 +855,87 @@ function drawOverlay(){
   if(c&&c.Hi){ for(const p of P().players){ const q=playerPos(p,t); if(!q) continue; const im=applyH(c.Hi,q[0],q[1]); if(!im||im[2]<=0) continue; const [px,py]=I(im[0],im[1]); const col=P().teams[p.team].color; g.beginPath(); g.arc(px,py,S.selected===p.id?9:7,0,Math.PI*2); g.fillStyle=col; g.globalAlpha=.85; g.fill(); g.globalAlpha=1; g.strokeStyle='#fff'; g.lineWidth=S.selected===p.id?2.5:1.2; g.stroke(); g.fillStyle='#fff'; g.font='700 10px "Barlow Condensed",sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(p.num,px,py+0.5); }
     const b=ballPos(t); if(b){ const im=applyH(c.Hi,b[0],b[1]); if(im&&im[2]>0){ const [px,py]=I(im[0],im[1]); g.beginPath(); g.arc(px,py-8,4.5,0,Math.PI*2); g.fillStyle='#e8862e'; g.fill(); g.strokeStyle='#fff'; g.lineWidth=1; g.stroke(); } } }
 }
+
+// ───────────────────────── training-data labelling (人物・チーム・ボール)
+const LAB_COLORS={A:null,B:null,X:'#9a9a9a',ball:'#e8862e'};
+function labColor(c){ if(c==='A'||c==='B') return P().teams[c].color; return LAB_COLORS[c]||'#fff'; }
+function labFrameKey(t){ return Math.round(t*100); }
+function labCurFrame(){ const t=now(); return S.lab.frames.find(f=>Math.abs(f.t-t)<0.03)||null; }
+function labSetCls(c){ S.lab.cls=c; $$('#labTools [data-lc]').forEach(b=>b.classList.toggle('on',b.dataset.lc===c)); }
+function labCounts(){ const n={A:0,B:0,X:0,ball:0}; for(const f of S.lab.frames) for(const b of f.boxes) n[b.c]=(n[b.c]||0)+1; return n; }
+function renderLab(){ const n=labCounts(); const cur=labCurFrame(); $('#labNote').textContent=`保存済み ${S.lab.frames.length}フレーム（${P().teams.A.name} ${n.A}・${P().teams.B.name} ${n.B}・審判等 ${n.X}・ボール ${n.ball}）`+(cur?` ／ この時刻は保存済み（枠 ${cur.boxes.length}）`:''); $('#labcA').textContent=P().teams.A.name; $('#labcB').textContent=P().teams.B.name; const on=S.vmode==='label'; $('#labTools').hidden=!on; $('#labSaveBtn').hidden=!on; $('#labExitBtn').hidden=!on; $('#labModeBtn').classList.toggle('on',on); }
+async function labEnter(){ if(!S.source) return; S.source.pause(); updatePlayBtn(); const cur=labCurFrame(); S.lab.cur={t:now(),boxes:cur?cur.boxes.map(b=>({...b})):[]}; labSetCls(S.lab.cls||'A'); renderLab(); if(!cur){ await labDraft(); } }
+function labLeave(){ S.lab.cur=null; S.lab.drag=null; renderLab(); }
+// draft boxes from the analysis (if this frame was analysed) or a fresh detection
+async function labDraft(){ if(!S.source||S.source.kind==='youtube') return toast(YT_NO_AI,5000); const t=now(); let persons=[],balls=[]; const f=S.scan?scanFrameAt(t):null;
+  if(f&&f.dets.length){ persons=f.dets.map(d=>({u:d.u,v:d.v,w:d.w,h:d.h,team:(S.scan.tracks[d.track]||{}).team})); balls=f.balls||[]; }
+  else { try{ toast('検出中…',1500); const r=await detectFrame(S.source.el,S.source.width,S.source.height); persons=r.persons; balls=r.balls; }catch(e){ return toast('検出できませんでした: '+e.message,4000); } }
+  const sup=labSupervisor(); const W=S.source.width,H=S.source.height; const boxes=[];
+  const feats=persons.map(d=>{ const col=sampleColor(S.source.el,d,W,H); return col?colorFeat(col):null; });
+  let split=null; if(!sup){ const idx=feats.map((f,i)=>f?i:-1).filter(i=>i>=0); if(idx.length>=4){ const km=kmeans(idx.map(i=>feats[i]),2,20); if(km.centers.length===2){ const bright=km.centers[0][0]>=km.centers[1][0]?0:1; split={}; idx.forEach((i,j)=>{ split[i]=km.labels[j]===bright?'A':'B'; }); } } }
+  persons.forEach((d,i)=>{ let c=d.team&&d.team!=='X'?d.team:null; if(!c&&sup&&feats[i]) c=sup.classify(feats[i]); if(!c&&split&&split[i]) c=split[i]; if(!c) c=d.team==='X'?'X':'A'; boxes.push({c,u:d.u,v:d.v,w:d.w,h:d.h}); });
+  for(const b of balls) boxes.push({c:'ball',u:b.u,v:b.v,w:b.w,h:b.h});
+  if(!S.lab.cur) S.lab.cur={t,boxes:[]}; S.lab.cur.boxes=boxes; renderLab(); toast(`下書き: 人物 ${persons.length}・ボール ${balls.length}。種類が違う枠は、正しい種類を選んでクリックで直してください`,5000); }
+function labHit(pt){ const cur=S.lab.cur; if(!cur) return null; const r=pt.r; const tol=8; let best=null;
+  for(let i=cur.boxes.length-1;i>=0;i--){ const b=cur.boxes[i]; const x0=r.x+b.u*r.w,y0=r.y+b.v*r.h,x1=x0+b.w*r.w,y1=y0+b.h*r.h;
+    const corners=[[x0,y0,'tl'],[x1,y0,'tr'],[x0,y1,'bl'],[x1,y1,'br']]; for(const [cx,cy,k] of corners){ if(Math.hypot(cx-pt.px,cy-pt.py)<tol) return {i,b,corner:k}; }
+    if(!best&&pt.px>=x0&&pt.px<=x1&&pt.py>=y0&&pt.py<=y1) best={i,b,corner:null}; }
+  return best; }
+function labPointerDown(e,pt){ if(!S.lab.cur) return; try{ ov.setPointerCapture(e.pointerId); }catch(err){} const h=labHit(pt); const cls=S.lab.cls;
+  if(h&&h.corner){ S.lab.drag={kind:'resize',b:h.b,corner:h.corner,moved:false}; return; }
+  if(h){ if(cls==='del'){ S.lab.cur.boxes.splice(h.i,1); return; } S.lab.drag={kind:'move',b:h.b,u0:pt.u,v0:pt.v,bu:h.b.u,bv:h.b.v,moved:false}; return; }
+  if(cls==='del') return; if(pt.u<0||pt.u>1||pt.v<0||pt.v>1) return;
+  const b={c:cls,u:pt.u,v:pt.v,w:0,h:0}; S.lab.cur.boxes.push(b); S.lab.drag={kind:'draw',b,u0:pt.u,v0:pt.v,moved:false}; }
+function labPointerMove(e,pt){ const d=S.lab.drag; if(!d) return; d.moved=true; const cu=clamp(pt.u,0,1), cv=clamp(pt.v,0,1);
+  if(d.kind==='draw'){ d.b.u=Math.min(d.u0,cu); d.b.v=Math.min(d.v0,cv); d.b.w=Math.abs(cu-d.u0); d.b.h=Math.abs(cv-d.v0); }
+  else if(d.kind==='move'){ d.b.u=clamp(d.bu+(pt.u-d.u0),0,1-d.b.w); d.b.v=clamp(d.bv+(pt.v-d.v0),0,1-d.b.h); }
+  else if(d.kind==='resize'){ const b=d.b; let x0=b.u,y0=b.v,x1=b.u+b.w,y1=b.v+b.h; if(d.corner.includes('l')) x0=cu; else x1=cu; if(d.corner.includes('t')) y0=cv; else y1=cv; b.u=Math.min(x0,x1); b.v=Math.min(y0,y1); b.w=Math.abs(x1-x0); b.h=Math.abs(y1-y0); } }
+function labPointerUp(e){ const d=S.lab.drag; S.lab.drag=null; if(!d) return; const r=mediaRect();
+  if(d.kind==='draw'){ if(!d.moved||d.b.w*r.w<6||d.b.h*r.h<6){ if(d.b.c==='ball'){ const s=Math.max(10,0.012*r.w); d.b.u=clamp(d.u0-s/2/r.w,0,1); d.b.v=clamp(d.v0-s/2/r.h,0,1); d.b.w=s/r.w; d.b.h=s/r.h; } else { S.lab.cur.boxes.splice(S.lab.cur.boxes.indexOf(d.b),1); } } }
+  else if(d.kind==='move'&&!d.moved){ d.b.c=S.lab.cls; } }
+function drawLabelOverlay(g,r,I){ const cur=S.lab.cur; if(!cur) return; g.fillStyle='rgba(0,0,0,.55)'; g.fillRect(r.x+8,r.y+8,300,24); g.fillStyle='#fff'; g.font='12px "Noto Sans JP",sans-serif'; g.textAlign='left'; g.textBaseline='middle'; const cn={A:P().teams.A.name,B:P().teams.B.name,X:'審判・その他',ball:'ボール',del:'削除'}[S.lab.cls]; g.fillText(`ラベル付け: ${cn}（枠 ${cur.boxes.length}）Enterで保存`,r.x+16,r.y+20);
+  cur.boxes.forEach((b,i)=>{ const [x,y]=I(b.u,b.v); const w=b.w*r.w,h=b.h*r.h; const col=labColor(b.c); g.lineWidth=2; g.strokeStyle=col; if(b.c==='ball'){ g.beginPath(); g.ellipse(x+w/2,y+h/2,Math.max(4,w/2),Math.max(4,h/2),0,0,Math.PI*2); g.stroke(); } else { g.strokeRect(x,y,w,h); g.fillStyle=col; for(const [cx,cy] of [[x,y],[x+w,y],[x,y+h],[x+w,y+h]]) g.fillRect(cx-3,cy-3,6,6); const tag=b.c==='X'?'審':b.c; g.fillStyle=col; g.fillRect(x,y-15,16,15); g.fillStyle=b.c==='A'||b.c==='B'?'#fff':'#111'; g.font='700 11px "Barlow Condensed",sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(tag,x+8,y-7.5); } }); }
+// persistence: one record per video in IndexedDB (JPEG blobs included)
+async function labLoad(key){ S.lab.key=key; S.lab.frames=[]; try{ const rec=await idb.get('lab:'+key); if(rec&&rec.frames) S.lab.frames=rec.frames; }catch(e){} renderLab(); }
+async function labStore(){ if(!S.lab.key) return; const ok=await idb.set('lab:'+S.lab.key,{frames:S.lab.frames}); if(!ok) toast('教師データを保存できませんでした（ブラウザの保存領域）',5000); }
+function grabFrameJpeg(){ return new Promise(res=>{ const el=S.source.el, W=S.source.width, H=S.source.height; const cv=document.createElement('canvas'); cv.width=W; cv.height=H; cv.getContext('2d').drawImage(el,0,0,W,H); cv.toBlob(b=>res(b),'image/jpeg',0.9); }); }
+async function labSaveFrame(){ if(!S.lab.cur||!S.source||S.source.kind==='youtube') return; const t=now(); const W=S.source.width,H=S.source.height; const boxes=S.lab.cur.boxes.filter(b=>b.w>0&&b.h>0).map(b=>{ const o={c:b.c,u:+b.u.toFixed(4),v:+b.v.toFixed(4),w:+b.w.toFixed(4),h:+b.h.toFixed(4)}; if(b.c==='A'||b.c==='B'||b.c==='X'){ const col=sampleColor(S.source.el,b,W,H); if(col) o.f=colorFeat(col).map(v=>+v.toFixed(3)); } return o; });
+  if(!boxes.length) return toast('枠がありません');
+  const jpg=await grabFrameJpeg(); const fr={t:+t.toFixed(2),w:W,h:H,boxes,jpg}; const i=S.lab.frames.findIndex(f=>Math.abs(f.t-t)<0.03); if(i>=0) S.lab.frames[i]=fr; else S.lab.frames.push(fr); S.lab.frames.sort((a,b)=>a.t-b.t);
+  await labStore(); renderLab(); const n=labCounts(); toast(`保存しました（${S.lab.frames.length}フレーム目）。次の場面へ進んで続けてください。目安: 各チーム100枠・ボール50枠以上`,5000); }
+// supervised team classifier from labelled boxes (k-nearest neighbours on the uniform colour feature)
+function labSupervisor(){ const pts=[]; for(const f of S.lab.frames) for(const b of f.boxes) if(b.f&&(b.c==='A'||b.c==='B'||b.c==='X')) pts.push({c:b.c,f:b.f});
+  const nA=pts.filter(p=>p.c==='A').length, nB=pts.filter(p=>p.c==='B').length; if(nA<3||nB<3) return null;
+  const mean=c=>{ const m=[0,0,0,0]; let n=0; for(const p of pts) if(p.c===c){ for(let j=0;j<4;j++) m[j]+=p.f[j]; n++; } return m.map(v=>v/n); };
+  const centres={A:mean('A'),B:mean('B')}; const K=Math.min(7,pts.length);
+  const classify=f=>{ if(!f) return 'X'; const ds=pts.map(p=>[dist2(p.f,f),p.c]).sort((a,b)=>a[0]-b[0]).slice(0,K); const vote={A:0,B:0,X:0}; for(const [d,c] of ds) vote[c]+=1/(1e-3+d); return vote.A>=vote.B&&vote.A>=vote.X?'A':vote.B>=vote.X?'B':'X'; };
+  return {n:pts.length,nA,nB,centres,classify}; }
+function labReteam(){ const sc=S.scan; if(!sc) return toast('先に自動解析を実行してください'); const sup=labSupervisor(); if(!sup) return toast('各チーム3枠以上のラベルを保存してください'); let n=0,missing=0; for(const id in sc.tracks){ const tr=sc.tracks[id]; if(!tr.feat){ missing++; continue; } const v=sup.classify(tr.feat); tr.k=v==='A'?0:v==='B'?1:2; n++; } sc.clusters[0].team='A'; sc.clusters[1].team='B'; sc.clusters.forEach((cl,i)=>{ cl.n=Object.values(sc.tracks).filter(tr=>tr.k===i).length; }); applyClusterTeams(); renderClusters(); saveScan(); toast(`ラベル ${sup.n}枠を使って ${n}本の追跡のチームを判定し直しました`+(missing?`（色情報のない ${missing}本は再解析が必要）`:''),6000); }
+// ZIP (stored, no compression) with a YOLO dataset: images/, labels/ (player/ball/referee) and labels_team/ (teamA/teamB/ball/other)
+const CRC_T=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c=CRC_T[(c^u8[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function makeZip(files){ // files: [{name, data:Uint8Array}]
+  const enc=new TextEncoder(); const parts=[]; const central=[]; let off=0;
+  for(const f of files){ const name=enc.encode(f.name), data=f.data, crc=crc32(data); const h=new DataView(new ArrayBuffer(30)); h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(6,0x0800,true); h.setUint16(8,0,true); h.setUint16(10,0,true); h.setUint16(12,0x21,true); h.setUint32(14,crc,true); h.setUint32(18,data.length,true); h.setUint32(22,data.length,true); h.setUint16(26,name.length,true); h.setUint16(28,0,true);
+    parts.push(new Uint8Array(h.buffer),name,data); const c=new DataView(new ArrayBuffer(46)); c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true); c.setUint16(8,0x0800,true); c.setUint16(10,0,true); c.setUint16(12,0,true); c.setUint16(14,0x21,true); c.setUint32(16,crc,true); c.setUint32(20,data.length,true); c.setUint32(24,data.length,true); c.setUint16(28,name.length,true); c.setUint16(30,0,true); c.setUint16(32,0,true); c.setUint16(34,0,true); c.setUint16(36,0,true); c.setUint32(38,0,true); c.setUint32(42,off,true); central.push(new Uint8Array(c.buffer),name); off+=30+name.length+data.length; }
+  const cdStart=off; let cdLen=0; for(const c of central) cdLen+=c.length; const e=new DataView(new ArrayBuffer(22)); e.setUint32(0,0x06054b50,true); e.setUint16(8,files.length,true); e.setUint16(10,files.length,true); e.setUint32(12,cdLen,true); e.setUint32(16,cdStart,true); e.setUint16(20,0,true);
+  return new Blob([...parts,...central,new Uint8Array(e.buffer)],{type:'application/zip'}); }
+async function labExport(){ if(!S.lab.frames.length) return toast('保存済みのフレームがありません'); const enc=new TextEncoder(); const files=[]; const base=(S.lab.key||'video').replace(/[^\w.-]+/g,'_').slice(0,40); const listA=[];
+  for(const f of S.lab.frames){ const name=`${base}_${String(Math.round(f.t*100)).padStart(7,'0')}`; const jpg=new Uint8Array(await f.jpg.arrayBuffer()); files.push({name:`images/train/${name}.jpg`,data:jpg}); listA.push(`images/train/${name}.jpg`);
+    const yolo=(b,ci)=>`${ci} ${(b.u+b.w/2).toFixed(6)} ${(b.v+b.h/2).toFixed(6)} ${b.w.toFixed(6)} ${b.h.toFixed(6)}`;
+    const l1=f.boxes.map(b=>yolo(b,b.c==='ball'?1:b.c==='X'?2:0)).join('\n'); const l2=f.boxes.map(b=>yolo(b,b.c==='A'?0:b.c==='B'?1:b.c==='ball'?2:3)).join('\n');
+    files.push({name:`labels/train/${name}.txt`,data:enc.encode(l1+'\n')}); files.push({name:`labels_team/train/${name}.txt`,data:enc.encode(l2+'\n')}); }
+  files.push({name:'data.yaml',data:enc.encode(`# CourtTrace training data (generic classes; works across games)\npath: .\ntrain: images/train\nval: images/train\nnames:\n  0: player\n  1: ball\n  2: referee\n`)});
+  files.push({name:'data_team.yaml',data:enc.encode(`# same images with team classes (this game's uniforms only)\npath: .\ntrain: images/train\nval: images/train\nnames:\n  0: ${P().teams.A.name}\n  1: ${P().teams.B.name}\n  2: ball\n  3: other\n`)});
+  files.push({name:'meta.json',data:enc.encode(JSON.stringify({video:S.lab.key,teams:{A:P().teams.A.name,B:P().teams.B.name},frames:S.lab.frames.map(f=>({t:f.t,w:f.w,h:f.h,boxes:f.boxes}))},null,1))});
+  const blob=makeZip(files); download(`courttrace_labels_${base}.zip`,blob); toast(`書き出しました: ${S.lab.frames.length}フレーム・${files.length}ファイル`,4000); }
+$('#labModeBtn').addEventListener('click',()=>{ if(!S.source) return toast('先に動画を開いてください'); if(S.source.kind==='youtube') return toast('YouTube動画からは画像を取り出せません。動画ファイルを「動画を開く」で読み込んでください',6000); setVMode(S.vmode==='label'?'track':'label'); });
+$('#labSaveBtn').addEventListener('click',labSaveFrame); $('#labExitBtn').addEventListener('click',()=>setVMode('track'));
+$$('#labTools [data-lc]').forEach(b=>b.addEventListener('click',()=>labSetCls(b.dataset.lc)));
+$('#labDraftBtn').addEventListener('click',labDraft); $('#labClearFrameBtn').addEventListener('click',()=>{ if(S.lab.cur) S.lab.cur.boxes=[]; });
+$('#labNextBtn').addEventListener('click',async()=>{ if(!S.source) return; const dur=S.source.duration||1e9; const t=Math.min(dur-0.1,now()+15); await (S.source.seekAsync?S.source.seekAsync(t):Promise.resolve(seek(t))); if(S.vmode==='label'){ await new Promise(r=>setTimeout(r,150)); const cur=labCurFrame(); S.lab.cur={t:now(),boxes:cur?cur.boxes.map(b=>({...b})):[]}; if(!cur) await labDraft(); renderLab(); } else setVMode('label'); });
+$('#labExportBtn').addEventListener('click',labExport); $('#labReteamBtn').addEventListener('click',labReteam);
+$('#labClearAllBtn').addEventListener('click',async()=>{ if(!S.lab.frames.length) return; const ok=await ask(`この動画の教師データ ${S.lab.frames.length}フレームをすべて削除しますか？`,[{label:'キャンセル',value:false},{label:'削除する',value:true,primary:true}]); if(!ok) return; S.lab.frames=[]; await labStore(); renderLab(); });
 
 // ───────────────────────── timeline
 let tlRows=[]; let tlDrag=false;
@@ -1012,13 +1109,14 @@ $('#camClearBtn').addEventListener('click',()=>{ P().settings.cam=null; S.camMod
 $('#camZ').addEventListener('change',e=>{ const cam=P().settings.cam; if(cam){ cam.z=parseFloat(e.target.value)||cam.z; scheduleSave(); renderCam(); } });
 $('#mergeCalibBtn').addEventListener('click',async()=>{ const cs=P().calibs; if(cs.length<2) return; if(!(await confirmAsk(`${cs.length}件の位置合わせの点をすべて1つにまとめます（カメラが動いていない前提）。よろしいですか？`))) return; const pts={}; for(const c of cs) Object.assign(pts,c.pts); const m={id:uid(),t:0,pts,H:null,Hi:null}; recomputeCalib(m); if(!m.H) return toast('統合した点では計算できませんでした'); P().calibs=[m]; S.wiz=null; S.lm=null; scheduleSave(); renderCalibList(); const n=recomputeScan(); toast(`統合しました（${Object.keys(pts).length}点、誤差 ${(m.err*100).toFixed(2)}%）。`+(n?`解析結果 ${n} 点の位置も新しい位置合わせで計算し直しました。`:'')+'赤い点があれば置き直してください。',7000); });
 $('#delCalibBtn').addEventListener('click',()=>{ const c=calibAt(now()); if(!c) return; P().calibs=P().calibs.filter(k=>k!==c); scheduleSave(); renderCalibList(); toast('位置合わせを削除しました'); });
-function setVMode(m){ S.promptMode=false; $('#promptModeBtn').classList.remove('on'); S.vmode=m; $$('[data-vmode]').forEach(b=>b.classList.toggle('on',b.dataset.vmode===m)); $('#calibModeBtn').classList.toggle('on',m==='calib'); renderCalibList(); }
+function setVMode(m){ S.promptMode=false; $('#promptModeBtn').classList.remove('on'); if(S.vmode==='label'&&m!=='label') labLeave(); S.vmode=m; if(m==='label') labEnter(); $$('[data-vmode]').forEach(b=>b.classList.toggle('on',b.dataset.vmode===m)); $('#calibModeBtn').classList.toggle('on',m==='calib'); renderCalibList(); }
 $$('[data-vmode]').forEach(b=>b.addEventListener('click',()=>setVMode(b.dataset.vmode)));
 
 // ───────────────────────── video overlay interaction
 function ovPoint(e){ const rect=ov.getBoundingClientRect(); const r=mediaRect(); return {u:(e.clientX-rect.left-r.x)/r.w, v:(e.clientY-rect.top-r.y)/r.h, px:e.clientX-rect.left, py:e.clientY-rect.top, r}; }
 ov.addEventListener('pointerdown',e=>{
   if(!S.source) return; const pt=ovPoint(e); const t=now();
+  if(S.vmode==='label'){ labPointerDown(e,pt); return; }
   if(S.vmode==='calib'){
     const c=ensureCalib(t);
     for(const id in c.pts){ const [x,y]=[pt.r.x+c.pts[id][0]*pt.r.w, pt.r.y+c.pts[id][1]*pt.r.h]; if(Math.hypot(x-pt.px,y-pt.py)<10){ S.calibDrag={c,id}; ov.setPointerCapture(e.pointerId); S.lm=id; renderCalibList(); return; } }
@@ -1039,8 +1137,8 @@ ov.addEventListener('pointerdown',e=>{
   const q=imgToCourt(u,v,t); if(!q) return toast('先に「位置合わせ」でコートの目印を4点以上置いてください',4000);
   placeEntity(S.selected,[clamp(q[0],-1,C.L+1),clamp(q[1],-1,C.W+1)],t,true);
 });
-ov.addEventListener('pointermove',e=>{ if(!S.calibDrag) return; const pt=ovPoint(e); S.calibDrag.c.pts[S.calibDrag.id]=[pt.u,pt.v]; recomputeCalib(S.calibDrag.c); });
-ov.addEventListener('pointerup',()=>{ if(S.calibDrag){ scheduleSave(); renderCalibList(); S.calibDrag=null; } });
+ov.addEventListener('pointermove',e=>{ if(S.vmode==='label'){ labPointerMove(e,ovPoint(e)); return; } if(!S.calibDrag) return; const pt=ovPoint(e); S.calibDrag.c.pts[S.calibDrag.id]=[pt.u,pt.v]; recomputeCalib(S.calibDrag.c); });
+ov.addEventListener('pointerup',e=>{ if(S.vmode==='label'){ labPointerUp(e); return; } if(S.calibDrag){ scheduleSave(); renderCalibList(); S.calibDrag=null; } });
 function placeEntity(id,pos,t,advance){
   if(id==='ball'){ // dropping the ball on a player = that player holds it
     let best=null,bd=0.9; for(const p of P().players){ const q=playerPos(p,t); if(!q) continue; const d=Math.hypot(q[0]-pos[0],q[1]-pos[1]); if(d<bd){bd=d;best=p;} }
@@ -1142,7 +1240,13 @@ $('#pngBtn').addEventListener('click',()=>{ board.toBlob(b=>download('board_'+fm
 // ───────────────────────── AI detection (optional; loads TF.js lazily)
 // ---------- YOLOv10n (onnxruntime-web): persons + ball, tiled at native scale on WebGPU, 2 tiles on CPU
 let yolo=null, yoloLoading=null; const YOLO_IN=640;
-function yoloModelUrl(){ const v=$('#yoloModel')?$('#yoloModel').value:'s'; return v==='n'?'model/yolov10n.onnx':'model/yolov10s.onnx'; }
+let customModel=null; // {name, buf:ArrayBuffer, src:'file'|'repo'}
+async function initCustomModel(){ try{ const rec=await idb.get('model:custom'); if(rec&&rec.buf){ customModel={name:rec.name,buf:rec.buf,src:'file'}; } else if(await urlExists('model/custom.onnx')){ customModel={name:'model/custom.onnx',buf:null,src:'repo'}; } }catch(e){} renderCustomModel(); }
+function renderCustomModel(){ const n=$('#customModelNote'); if(!n) return; $('#customModelClear').hidden=!(customModel&&customModel.src==='file'); if(customModel) n.textContent=`カスタム学習モデルを使用中: ${customModel.name}（人物・ボール・審判を区別。審判はボードに出しません）`; }
+$('#customModel').addEventListener('change',async e=>{ const f=e.target.files[0]; if(!f) return; const buf=await f.arrayBuffer(); await idb.set('model:custom',{name:f.name,buf}); customModel={name:f.name,buf,src:'file'}; yolo=null; yoloLoading=null; renderCustomModel(); toast(`カスタムモデル ${f.name} を読み込みました。次の検出・解析から使われます`,5000); });
+$('#customModelClear').addEventListener('click',async()=>{ await idb.del('model:custom'); customModel=null; yolo=null; yoloLoading=null; $('#customModel').value=''; await initCustomModel(); if(!customModel) $('#customModelNote').textContent='カスタムモデルを解除しました。同梱の YOLOv10 を使います。'; });
+initCustomModel();
+function yoloModelUrl(){ if(customModel) return customModel.src==='file'?'custom:'+customModel.name:'model/custom.onnx'; const v=$('#yoloModel')?$('#yoloModel').value:'s'; return v==='n'?'model/yolov10n.onnx':'model/yolov10s.onnx'; }
 async function ensureYolo(){
   if(yolo && yolo.url===yoloModelUrl()) return yolo;
   if(yolo && yolo.url!==yoloModelUrl()){ yolo=null; yoloLoading=null; }
@@ -1152,13 +1256,13 @@ async function ensureYolo(){
     const localWasm=await urlExists('vendor/ort/ort-wasm-simd-threaded.jsep.wasm');
     ort.env.wasm.wasmPaths= localWasm ? new URL('vendor/ort/',location.href).href : 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/';
     ort.env.wasm.numThreads=Math.min(4,navigator.hardwareConcurrency||2); ort.env.logLevel='error';
-    let url=yoloModelUrl(); if(!(await urlExists(url))) url='model/yolov10n.onnx'; if(!(await urlExists(url))) throw new Error('YOLO model missing');
+    let url=yoloModelUrl(); const isCustom=!!customModel; const srcArg=(customModel&&customModel.src==='file')?new Uint8Array(customModel.buf):url; if(!isCustom){ if(!(await urlExists(url))) url='model/yolov10n.onnx'; if(!(await urlExists(url))) throw new Error('YOLO model missing'); }
     let sess=null, ep='wasm';
-    if(navigator.gpu){ try{ sess=await ort.InferenceSession.create(url,{executionProviders:['webgpu']}); await sess.run({images:new ort.Tensor('float32',new Float32Array(3*YOLO_IN*YOLO_IN),[1,3,YOLO_IN,YOLO_IN])}); ep='webgpu'; }catch(e){ console.warn('WebGPU unavailable, using CPU',e); sess=null; } }
-    if(!sess){ if(url!=='model/yolov10n.onnx' && await urlExists('model/yolov10n.onnx')) url='model/yolov10n.onnx'; sess=await ort.InferenceSession.create(url,{executionProviders:['wasm']}); }
+    if(navigator.gpu){ try{ sess=await ort.InferenceSession.create(isCustom?srcArg:url,{executionProviders:['webgpu']}); await sess.run({images:new ort.Tensor('float32',new Float32Array(3*YOLO_IN*YOLO_IN),[1,3,YOLO_IN,YOLO_IN])}); ep='webgpu'; }catch(e){ console.warn('WebGPU unavailable, using CPU',e); sess=null; } }
+    if(!sess){ if(!isCustom && url!=='model/yolov10n.onnx' && await urlExists('model/yolov10n.onnx')) url='model/yolov10n.onnx'; sess=await ort.InferenceSession.create(isCustom?srcArg:url,{executionProviders:['wasm']}); }
     const cv=document.createElement('canvas'); cv.width=YOLO_IN; cv.height=YOLO_IN; const g=cv.getContext('2d',{willReadFrequently:true});
-    yolo={sess,ep,cv,g,url,buf:new Float32Array(3*YOLO_IN*YOLO_IN)};
-    $('#detNote').textContent=`検出モデル読み込み済み（${url.includes('10s')?'YOLOv10s':'YOLOv10n'}・${ep==='webgpu'?'GPU':'CPU'}実行）`; return yolo;
+    yolo={sess,ep,cv,g,url,custom:isCustom,clsMap:isCustom?{0:0,1:32,2:99}:{0:0,32:32},buf:new Float32Array(3*YOLO_IN*YOLO_IN)};
+    $('#detNote').textContent=`検出モデル読み込み済み（${isCustom?'カスタム学習モデル':url.includes('10s')?'YOLOv10s':'YOLOv10n'}・${ep==='webgpu'?'GPU':'CPU'}実行）`; return yolo;
   })().catch(e=>{ yoloLoading=null; throw e; });
   return yoloLoading;
 }
@@ -1167,7 +1271,7 @@ async function yoloInfer(el,sx,sy,sw,sh){
   y.g.fillStyle='#727272'; y.g.fillRect(0,0,YOLO_IN,YOLO_IN); y.g.drawImage(el,sx,sy,sw,sh,0,0,w,h);
   const d=y.g.getImageData(0,0,YOLO_IN,YOLO_IN).data, f=y.buf; for(let i=0;i<N;i++){ f[i]=d[i*4]/255; f[N+i]=d[i*4+1]/255; f[2*N+i]=d[i*4+2]/255; }
   const out=await y.sess.run({images:new ort.Tensor('float32',f,[1,3,YOLO_IN,YOLO_IN])}); const data=out.output0.data; const res=[];
-  for(let i=0;i<300;i++){ const score=data[i*6+4]; if(score<0.2) continue; const cls=data[i*6+5]; if(cls!==0&&cls!==32) continue; res.push({cls,score,x:sx+data[i*6]/sc,y:sy+data[i*6+1]/sc,w:(data[i*6+2]-data[i*6])/sc,h:(data[i*6+3]-data[i*6+1])/sc}); }
+  for(let i=0;i<300;i++){ const score=data[i*6+4]; if(score<0.2) continue; const raw=data[i*6+5]; const cls=y.clsMap[raw]; if(cls==null||cls===99) continue; res.push({cls,score,x:sx+data[i*6]/sc,y:sy+data[i*6+1]/sc,w:(data[i*6+2]-data[i*6])/sc,h:(data[i*6+3]-data[i*6+1])/sc}); }
   return res;
 }
 function nmsMerge(dets,iou=0.5){ dets.sort((a,b)=>b.score-a.score); const out=[]; for(const d of dets){ let dup=false; for(const o of out){ if(o.cls!==d.cls) continue; const ix=Math.max(0,Math.min(o.x+o.w,d.x+d.w)-Math.max(o.x,d.x)), iy=Math.max(0,Math.min(o.y+o.h,d.y+d.h)-Math.max(o.y,d.y)); const inter=ix*iy, u=o.w*o.h+d.w*d.h-inter; if(u>0&&inter/u>iou){ dup=true; break; } } if(!dup) out.push(d); } return out; }
@@ -1411,14 +1515,17 @@ async function runScanInner(a,b){
   // team colours: one robust (median) feature per track, 2 clusters, far-away tracks (referees, stragglers) → ignore
   for(const tr of good){ const fs=tr.pts.filter(pt=>pt.col).map(pt=>colorFeat(pt.col)); tr.feat=fs.length?[0,1,2,3].map(j=>median(fs.map(f=>f[j]))):null; const cols=tr.pts.filter(pt=>pt.col).map(pt=>pt.col); tr.rgb=cols.length?[0,1,2].map(j=>median(cols.map(c=>c[j]))):null; }
   const tf=good.filter(tr=>tr.feat); const wfeats=[]; for(const tr of tf){ const w=Math.min(6,Math.max(1,Math.round(tr.pts.length/4))); for(let i=0;i<w;i++) wfeats.push(tr.feat); }
-  let centers; { const longT=tf.filter(tr=>tr.pts.length>=Math.max(6,median(tf.map(x=>x.pts.length)))); const base=(longT.length>=4?longT:tf).slice().sort((p,q)=>p.feat[0]-q.feat[0]); const k3=Math.max(1,Math.floor(base.length/3)); const mean=arr=>[0,1,2,3].map(j=>arr.reduce((a,tr)=>a+tr.feat[j],0)/arr.length); centers=[mean(base.slice(0,k3)),mean(base.slice(-k3))]; for(let it=0;it<25;it++){ const grp=[[],[]]; for(const tr of tf){ grp[dist2(tr.feat,centers[0])<=dist2(tr.feat,centers[1])?0:1].push(tr); } for(let k=0;k<2;k++) if(grp[k].length) centers[k]=mean(grp[k]); } }
+  const sup=labSupervisor();
+  let centers; if(sup){ centers=[sup.centres.A,sup.centres.B]; } else { const longT=tf.filter(tr=>tr.pts.length>=Math.max(6,median(tf.map(x=>x.pts.length)))); const base=(longT.length>=4?longT:tf).slice().sort((p,q)=>p.feat[0]-q.feat[0]); const k3=Math.max(1,Math.floor(base.length/3)); const mean=arr=>[0,1,2,3].map(j=>arr.reduce((a,tr)=>a+tr.feat[j],0)/arr.length); centers=[mean(base.slice(0,k3)),mean(base.slice(-k3))]; for(let it=0;it<25;it++){ const grp=[[],[]]; for(const tr of tf){ grp[dist2(tr.feat,centers[0])<=dist2(tr.feat,centers[1])?0:1].push(tr); } for(let k=0;k<2;k++) if(grp[k].length) centers[k]=mean(grp[k]); } }
+  if(sup){ for(const tr of tf){ const v=sup.classify(tr.feat); tr.k=v==='A'?0:v==='B'?1:2; tr.cd=0; tr.sup=true; } }
   const clusters=centers.map((c,i)=>({i,n:0,rgb:[128,128,128],team:i===0?'A':'B'})); while(clusters.length<2) clusters.push({i:clusters.length,n:0,rgb:[128,128,128],team:clusters.length?'B':'A'}); clusters.push({i:2,n:0,rgb:[110,110,110],team:'X',other:true});
   const rgbAcc=[[0,0,0,0],[0,0,0,0]];
-  for(const tr of tf){ const d0=centers[0]?dist2(tr.feat,centers[0]):Infinity, d1=centers[1]?dist2(tr.feat,centers[1]):Infinity; tr.k=d0<=d1?0:1; tr.cd=Math.sqrt(Math.min(d0,d1)); }
-  for(const k of [0,1]){ const mem=tf.filter(tr=>tr.k===k); const md=median(mem.map(tr=>tr.cd)); for(const tr of mem){ if(tr.cd>Math.max(0.35,2.4*md)) tr.k=2; else if(tr.rgb){ const a=rgbAcc[k]; a[0]+=tr.rgb[0]; a[1]+=tr.rgb[1]; a[2]+=tr.rgb[2]; a[3]++; } } }
+  for(const tr of tf){ if(tr.sup) continue; const d0=centers[0]?dist2(tr.feat,centers[0]):Infinity, d1=centers[1]?dist2(tr.feat,centers[1]):Infinity; tr.k=d0<=d1?0:1; tr.cd=Math.sqrt(Math.min(d0,d1)); }
+  for(const k of [0,1]){ const mem=tf.filter(tr=>tr.k===k); const md=median(mem.map(tr=>tr.cd)); for(const tr of mem){ if(!tr.sup&&tr.cd>Math.max(0.35,2.4*md)) tr.k=2; else if(tr.rgb){ const a=rgbAcc[k]; a[0]+=tr.rgb[0]; a[1]+=tr.rgb[1]; a[2]+=tr.rgb[2]; a[3]++; } } }
   for(const tr of good) if(tr.k==null) tr.k=2;
   clusters.forEach((cl,i)=>{ if(i<2){ const a=rgbAcc[i]; if(a[3]) cl.rgb=[a[0]/a[3],a[1]/a[3],a[2]/a[3]]; } cl.n=good.filter(tr=>tr.k===i).length; });
-  if(clusters[1].rgb.reduce((x,y)=>x+y,0)>clusters[0].rgb.reduce((x,y)=>x+y,0)){ clusters[0].team='B'; clusters[1].team='A'; }
+  if(!sup && clusters[1].rgb.reduce((x,y)=>x+y,0)>clusters[0].rgb.reduce((x,y)=>x+y,0)){ clusters[0].team='B'; clusters[1].team='A'; }
+  if(sup){ clusters[0].team='A'; clusters[1].team='B'; clusters[0].sup=clusters[1].sup=true; }
   // ball: drop stationary false positives (floor marks, spare balls), keep the rest sorted by time
   ballObs.sort((p,q)=>p.t-q.t);
   const ballKeep=ballObs.filter(o=>{ let n=0,tmin=o.t,tmax=o.t; for(const p of ballObs){ if(Math.hypot(p.x-o.x,p.y-o.y)<0.6){ n++; tmin=Math.min(tmin,p.t); tmax=Math.max(tmax,p.t); } } return !(n>=6 && tmax-tmin>=8); });
@@ -1441,10 +1548,10 @@ $('#recalcScanBtn').addEventListener('click',()=>{ const n=recomputeScan(); toas
 function applyClusterTeams(){ const sc=S.scan; if(!sc) return; for(const id in sc.tracks){ const tr=sc.tracks[id]; const cl=sc.clusters[tr.k]; tr.team=cl?cl.team:'X'; } }
 function renderClusters(){ const sc=S.scan; const box=$('#clusterBox'); if(!sc){ box.hidden=true; return; } box.hidden=false; const host=$('#clusterList'); host.innerHTML='';
   sc.clusters.forEach((cl,i)=>{ const row=document.createElement('div'); row.className='field'; const rgb=`rgb(${cl.rgb.map(Math.round).join(',')})`; row.innerHTML=`<span style="width:22px;height:22px;border-radius:50%;background:${rgb};border:2px solid var(--panel);box-shadow:0 0 0 1px var(--line);flex:none"></span><label>${cl.other?'どちらでもない（審判など）':'ユニフォーム色'+(i+1)}（${cl.n}本）</label><select data-cl="${i}"><option value="A">${P().teams.A.name}</option><option value="B">${P().teams.B.name}</option><option value="X">無視（審判・観客）</option></select>`; row.querySelector('select').value=cl.team; row.querySelector('select').addEventListener('change',e=>{ cl.team=e.target.value; applyClusterTeams(); saveScan(); }); host.appendChild(row); }); }
-function slimScan(){ const sc=S.scan; if(!sc) return null; return {a:sc.a,b:sc.b,dt:sc.dt,clusters:sc.clusters,segErr:sc.segErr||[],ball:(sc.ball||[]).map(o=>[+o.t.toFixed(2),+o.x.toFixed(2),+o.y.toFixed(2),o.track||0]),Hs:(sc.Hs||[]).map(h=>[+h.t.toFixed(2),...h.H.flat().map(v=>+v.toPrecision(7))]),tracks:Object.values(sc.tracks).map(tr=>({id:tr.id,k:tr.k,player:tr.player,pts:tr.pts.map(pt=>[+pt.t.toFixed(2),+pt.x.toFixed(2),+pt.y.toFixed(2),+pt.fu.toFixed(4),+pt.fv.toFixed(4),pt.cid||null])}))}; }
+function slimScan(){ const sc=S.scan; if(!sc) return null; return {a:sc.a,b:sc.b,dt:sc.dt,clusters:sc.clusters,segErr:sc.segErr||[],ball:(sc.ball||[]).map(o=>[+o.t.toFixed(2),+o.x.toFixed(2),+o.y.toFixed(2),o.track||0]),Hs:(sc.Hs||[]).map(h=>[+h.t.toFixed(2),...h.H.flat().map(v=>+v.toPrecision(7))]),tracks:Object.values(sc.tracks).map(tr=>({id:tr.id,k:tr.k,player:tr.player,feat:tr.feat?tr.feat.map(v=>+v.toFixed(3)):null,pts:tr.pts.map(pt=>[+pt.t.toFixed(2),+pt.x.toFixed(2),+pt.y.toFixed(2),+pt.fu.toFixed(4),+pt.fv.toFixed(4),pt.cid||null])}))}; }
 function saveScan(){ try{ if(!S.source||!S.scan) return; const slim=slimScan(); idb.set('scan:'+S.source.key, slim).then(ok=>{ if(!ok){ try{ localStorage.setItem('courttrace:scan:'+S.source.key, JSON.stringify(slim)); }catch(e){ toast('解析結果をブラウザに保存できませんでした。「プロジェクト保存」でJSONとして残してください',6000); } } }); }catch(e){ console.warn('scan save failed',e); } }
 async function loadScan(key){ try{ let obj=await idb.get('scan:'+key); if(!obj){ const raw=localStorage.getItem('courttrace:scan:'+key); if(raw) obj=JSON.parse(raw); } if(!obj) return; inflateScan(obj); }catch(e){ console.warn(e); } }
-function inflateScan(slim){ try{ const tracks={}; const frames=[]; const byT=new Map(); for(const tr of slim.tracks){ const t2={id:tr.id,k:tr.k,player:tr.player||null,team:null,pts:tr.pts.map(a=>({t:a[0],x:a[1],y:a[2],fu:a[3],fv:a[4],cid:a[5]||null}))}; tracks[tr.id]=t2; for(const pt of t2.pts){ const key2=pt.t.toFixed(2); if(!byT.has(key2)) byT.set(key2,{t:pt.t,dets:[]}); byT.get(key2).dets.push({u:pt.fu-0.02,v:pt.fv-0.12,w:0.04,h:0.12,fu:pt.fu,fv:pt.fv,x:pt.x,y:pt.y,track:tr.id}); } } frames.push(...[...byT.values()].sort((p,q)=>p.t-q.t)); S.scan={a:slim.a,b:slim.b,dt:slim.dt,frames,tracks,clusters:slim.clusters,segErr:slim.segErr||[],ball:(slim.ball||[]).map(a=>({t:a[0],x:a[1],y:a[2],track:a[3]||null})),Hs:(slim.Hs||[]).map(a=>({t:a[0],H:[[a[1],a[2],a[3]],[a[4],a[5],a[6]],[a[7],a[8],a[9]]]}))}; applyClusterTeams(); renderClusters(); $('#scanNote').textContent=`前回の解析結果（${Object.keys(tracks).length}本）を復元しました。`; }catch(e){} }
+function inflateScan(slim){ try{ const tracks={}; const frames=[]; const byT=new Map(); for(const tr of slim.tracks){ const t2={id:tr.id,k:tr.k,player:tr.player||null,team:null,feat:tr.feat||null,pts:tr.pts.map(a=>({t:a[0],x:a[1],y:a[2],fu:a[3],fv:a[4],cid:a[5]||null}))}; tracks[tr.id]=t2; for(const pt of t2.pts){ const key2=pt.t.toFixed(2); if(!byT.has(key2)) byT.set(key2,{t:pt.t,dets:[]}); byT.get(key2).dets.push({u:pt.fu-0.02,v:pt.fv-0.12,w:0.04,h:0.12,fu:pt.fu,fv:pt.fv,x:pt.x,y:pt.y,track:tr.id}); } } frames.push(...[...byT.values()].sort((p,q)=>p.t-q.t)); S.scan={a:slim.a,b:slim.b,dt:slim.dt,frames,tracks,clusters:slim.clusters,segErr:slim.segErr||[],ball:(slim.ball||[]).map(a=>({t:a[0],x:a[1],y:a[2],track:a[3]||null})),Hs:(slim.Hs||[]).map(a=>({t:a[0],H:[[a[1],a[2],a[3]],[a[4],a[5],a[6]],[a[7],a[8],a[9]]]}))}; applyClusterTeams(); renderClusters(); $('#scanNote').textContent=`前回の解析結果（${Object.keys(tracks).length}本）を復元しました。`; }catch(e){} }
 function scanFrameAt(t){ const sc=S.scan; if(!sc||t<sc.a-sc.dt||t>sc.b+sc.dt) return null; const fr=sc.frames; let lo=0,hi=fr.length-1; while(lo<hi){ const mid=(lo+hi)>>1; if(fr[mid].t<t) lo=mid+1; else hi=mid; } const cands=[fr[lo],fr[lo-1]].filter(Boolean); let best=null,bd=sc.dt*0.51; for(const f of cands){ const d=Math.abs(f.t-t); if(d<bd){bd=d;best=f;} } return best; }
 function trackPosAt(tr,t){ const pts=tr.pts; if(!pts.length) return null; if(t<pts[0].t-0.3||t>pts[pts.length-1].t+0.3) return null; if(t<=pts[0].t) return [pts[0].x,pts[0].y]; let lo=0,hi=pts.length-1; while(lo<hi){ const mid=(lo+hi)>>1; if(pts[mid].t<t) lo=mid+1; else hi=mid; } const b=pts[lo], a=pts[lo-1]||b; if(a===b||b.t===a.t) return [b.x,b.y]; const u=clamp((t-a.t)/(b.t-a.t),0,1); if(b.t-a.t>1.5) return u<0.5?[a.x,a.y]:[b.x,b.y]; return [lerp(a.x,b.x,u),lerp(a.y,b.y,u)]; }
 function autoBallPos(t){ const sc=S.scan; const obs=sc&&sc.ball; if(!obs||!obs.length) return null; let lo=0,hi=obs.length-1; while(lo<hi){ const mid=(lo+hi+1)>>1; if(obs[mid].t<=t) lo=mid; else hi=mid-1; } const last=obs[lo].t<=t?obs[lo]:null; const next=obs[lo].t<=t?obs[lo+1]:obs[lo];
@@ -1596,6 +1703,7 @@ try{ if(localStorage.getItem('courttrace:guide')==='off'){ $('#guide').hidden=tr
 document.addEventListener('keydown',e=>{
   if(e.target.matches('input,select,textarea')) return;
   if(e.key==='Escape'&&S.pendingShot){ S.pendingShot=null; $('#pendMsg').hidden=true; renderStats(); return; }
+  if(S.vmode==='label'&&!e.ctrlKey&&!e.metaKey){ const map={'1':'A','2':'B','3':'X','4':'ball','0':'del'}; if(map[e.key]){ labSetCls(map[e.key]); return; } if(e.key==='Enter'){ e.preventDefault(); labSaveFrame(); return; } if(e.key==='Escape'){ setVMode('track'); return; } }
   if(e.code==='Space'){ e.preventDefault(); togglePlay(); }
   else if(e.key==='ArrowLeft'){ e.preventDefault(); seek(now()-(e.shiftKey?1:1/FPS)); }
   else if(e.key==='ArrowRight'){ e.preventDefault(); seek(now()+(e.shiftKey?1:1/FPS)); }
@@ -1617,7 +1725,7 @@ function frame(ts){
 }
 function refreshRosterStatus(){ const t=now(); $$('#roster .prow').forEach((row,i)=>{}); const rows=[...$('#roster').querySelectorAll('.prow:not(.ballrow)')]; const ps=[...P().players.filter(p=>p.team==='A'),...P().players.filter(p=>p.team==='B')]; rows.forEach((row,i)=>{ const p=ps[i]; if(!p) return; const st=row.querySelector('.st'); const pos=playerPos(p,t); const cls=pos?'vis':p.kfs.length?'hid':''; st.className='st '+cls; st.textContent=pos?'表示中':p.kfs.length?'画面外':'未入力'; const cv=coverage(p.kfs); row.querySelector('.kfc').textContent=cv!=null?Math.round(cv*100)+'%':p.kfs.length+'KF'; if(cv!=null){ row.style.background=`linear-gradient(90deg, rgba(58,157,93,.18) ${Math.round(cv*100)}%, transparent ${Math.round(cv*100)}%)`; row.classList.toggle('done',cv>=0.9); } }); const br=$('#roster .ballrow'); if(br){ const bp=ballPos(t); const st=br.querySelector('.st'); st.className='st '+(bp?'vis':P().ball.kfs.length?'hid':''); st.textContent='ボール '+(bp?'':P().ball.kfs.length?'(非表示)':'(未入力)'); br.querySelector('.kfc').textContent=P().ball.kfs.length+'KF'; } }
 renderRoster(); renderCalibList(); applySettingsUI(); setVMode('track'); renderStats();
-if(new URLSearchParams(location.search).has('debug')) window.__ct={pinnedFitPts,estimateCamZ,decomposeH,composeH,constrainH,pinnedFit,recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,LM,LANDMARKS,C,COURT_PATHS,ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
+if(new URLSearchParams(location.search).has('debug')) window.__ct={loadProjectData,labReteam,labSupervisor,labExport,makeZip,pinnedFitPts,estimateCamZ,decomposeH,composeH,constrainH,pinnedFit,recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,LM,LANDMARKS,C,COURT_PATHS,ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
 { const q=new URLSearchParams(location.search).get('src'); if(q){ S.project=newProject(); S.project.name=q.split('/').pop(); mount(new VideoSource(q)); renderRoster(); renderCalibList(); } }
 requestAnimationFrame(frame);
 })();

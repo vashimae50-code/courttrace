@@ -93,11 +93,14 @@ def main():
 
     name = time.strftime('%Y%m%d_%H%M')
     model = YOLO(a.model)
-    model.train(data=str(yaml), epochs=a.epochs, imgsz=a.imgsz, batch=a.batch, device=a.device, project=a.out, name=name,
+    results = model.train(data=str(yaml), epochs=a.epochs, imgsz=a.imgsz, batch=a.batch, device=a.device, project=a.out, name=name,
                 # small dataset: gentle augmentation, freeze nothing, keep pretrained "person"/"sports ball" knowledge
                 lr0=0.002, warmup_epochs=2, close_mosaic=10, degrees=0, shear=0, perspective=0, flipud=0, fliplr=0.5,
                 hsv_h=0.01, hsv_s=0.4, hsv_v=0.3, mosaic=0.8, mixup=0.0, patience=30, workers=2, verbose=True)
-    best = Path(a.out) / name / 'weights' / 'best.pt'
+    save_dir = Path(getattr(results, 'save_dir', None) or model.trainer.save_dir)
+    best = save_dir / 'weights' / 'best.pt'
+    if not best.exists():
+        best = save_dir / 'weights' / 'last.pt'
     print('学習完了:', best)
 
     # export for the browser: 640 square, same output layout as the bundled yolov10 models ([1,300,6] x1,y1,x2,y2,score,class)

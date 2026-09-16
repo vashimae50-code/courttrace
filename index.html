@@ -46,6 +46,7 @@ header.bar{display:flex;align-items:center;gap:10px;padding:7px 14px;border-bott
 .viewport .ytwrap{position:absolute;background:#000}
 .viewport .ytwrap iframe{width:100%;height:100%;display:block;border:0}
 .btn{border:1px solid var(--line);background:var(--panel2);border-radius:6px;padding:5px 10px;line-height:1.2;white-space:nowrap}
+a.btn{text-decoration:none;color:inherit;display:inline-block;cursor:pointer}
 .btn:hover{border-color:var(--muted)}
 .btn.on{background:var(--accent);border-color:var(--accent);color:#1c1408;font-weight:500}
 .btn.sm{padding:3px 7px;font-size:12px}
@@ -922,7 +923,7 @@ function makeZip(files){ // files: [{name, data:Uint8Array}]
     parts.push(new Uint8Array(h.buffer),name,data); const c=new DataView(new ArrayBuffer(46)); c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true); c.setUint16(8,0x0800,true); c.setUint16(10,0,true); c.setUint16(12,0,true); c.setUint16(14,0x21,true); c.setUint32(16,crc,true); c.setUint32(20,data.length,true); c.setUint32(24,data.length,true); c.setUint16(28,name.length,true); c.setUint16(30,0,true); c.setUint16(32,0,true); c.setUint16(34,0,true); c.setUint16(36,0,true); c.setUint32(38,0,true); c.setUint32(42,off,true); central.push(new Uint8Array(c.buffer),name); off+=30+name.length+data.length; }
   const cdStart=off; let cdLen=0; for(const c of central) cdLen+=c.length; const e=new DataView(new ArrayBuffer(22)); e.setUint32(0,0x06054b50,true); e.setUint16(8,files.length,true); e.setUint16(10,files.length,true); e.setUint32(12,cdLen,true); e.setUint32(16,cdStart,true); e.setUint16(20,0,true);
   return new Blob([...parts,...central,new Uint8Array(e.buffer)],{type:'application/zip'}); }
-async function labExport(){ if(!S.lab.frames.length) return toast('保存済みのフレームがありません'); const enc=new TextEncoder(); const files=[]; const base=(S.lab.key||'video').replace(/[^\w.-]+/g,'_').slice(0,40); const listA=[];
+async function labExport(){ if(!S.lab.frames.length) return toast('保存済みのフレームがありません。ラベル付けの画面で「このフレームを保存」（Enter）を押すと増えます',6000); try{ toast('ZIPを作成中…',3000); const enc=new TextEncoder(); const files=[]; const base=(S.lab.key||'video').replace(/\.[a-z0-9]{2,4}$/i,'').replace(/[^\p{L}\p{N}.-]+/gu,'_').slice(0,40); const listA=[];
   for(const f of S.lab.frames){ const name=`${base}_${String(Math.round(f.t*100)).padStart(7,'0')}`; const jpg=new Uint8Array(await f.jpg.arrayBuffer()); files.push({name:`images/train/${name}.jpg`,data:jpg}); listA.push(`images/train/${name}.jpg`);
     const yolo=(b,ci)=>`${ci} ${(b.u+b.w/2).toFixed(6)} ${(b.v+b.h/2).toFixed(6)} ${b.w.toFixed(6)} ${b.h.toFixed(6)}`;
     const l1=f.boxes.map(b=>yolo(b,b.c==='ball'?1:b.c==='X'?2:0)).join('\n'); const l2=f.boxes.map(b=>yolo(b,b.c==='A'?0:b.c==='B'?1:b.c==='ball'?2:3)).join('\n');
@@ -930,7 +931,14 @@ async function labExport(){ if(!S.lab.frames.length) return toast('保存済み�
   files.push({name:'data.yaml',data:enc.encode(`# CourtTrace training data (generic classes; works across games)\npath: .\ntrain: images/train\nval: images/train\nnames:\n  0: player\n  1: ball\n  2: referee\n`)});
   files.push({name:'data_team.yaml',data:enc.encode(`# same images with team classes (this game's uniforms only)\npath: .\ntrain: images/train\nval: images/train\nnames:\n  0: ${P().teams.A.name}\n  1: ${P().teams.B.name}\n  2: ball\n  3: other\n`)});
   files.push({name:'meta.json',data:enc.encode(JSON.stringify({video:S.lab.key,teams:{A:P().teams.A.name,B:P().teams.B.name},frames:S.lab.frames.map(f=>({t:f.t,w:f.w,h:f.h,boxes:f.boxes}))},null,1))});
-  const blob=makeZip(files); download(`courttrace_labels_${base}.zip`,blob); toast(`書き出しました: ${S.lab.frames.length}フレーム・${files.length}ファイル`,4000); }
+  const blob=makeZip(files); const name=`courttrace_labels_${base}.zip`;
+  if(window.claude&&window.claude.use){ await download(name,blob); return; }
+  // show an explicit download link: a direct click is the most reliable way to save a large file in every browser
+  const m=$('#modal'), bt=$('#mBtns'); $('#mText').textContent=`教師データのZIPができました（${S.lab.frames.length}フレーム・${(blob.size/1048576).toFixed(1)} MB）。「ダウンロード」を押して保存してください。`; bt.innerHTML='';
+  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.className='btn go'; a.textContent='ダウンロード'; a.href=url; a.download=name; a.addEventListener('click',()=>{ setTimeout(()=>{ m.hidden=true; toast('保存しました: '+name,4000); },300); });
+  const c=document.createElement('button'); c.className='btn'; c.textContent='閉じる'; c.addEventListener('click',()=>{ m.hidden=true; URL.revokeObjectURL(url); });
+  bt.appendChild(c); bt.appendChild(a); m.hidden=false; a.focus();
+  }catch(e){ console.error(e); toast('書き出しに失敗しました: '+(e.message||e),8000); } }
 $('#labModeBtn').addEventListener('click',()=>{ if(!S.source) return toast('先に動画を開いてください'); if(S.source.kind==='youtube') return toast('YouTube動画からは画像を取り出せません。動画ファイルを「動画を開く」で読み込んでください',6000); if(S.vmode==='label') labExit(); else setVMode('label'); });
 $('#labSaveBtn').addEventListener('click',labSaveFrame); $('#labExitBtn').addEventListener('click',labExit);
 async function labExit(){ if(S.vmode==='label'&&labDirty()){ const v=await ask('この場面の枠はまだ保存されていません。',[{label:'保存せず終了',value:'drop'},{label:'キャンセル',value:null},{label:'保存して終了',value:'save',primary:true}]); if(!v) return; if(v==='save'){ const ok=await labSaveFrame(); if(!ok) return; } } setVMode('track'); }

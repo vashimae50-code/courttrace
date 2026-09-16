@@ -296,10 +296,11 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         <div id="labTools" hidden>
           <div class="actions" style="margin-top:6px"><button class="btn sm on" data-lc="A" id="labcA">A</button><button class="btn sm" data-lc="B" id="labcB">B</button><button class="btn sm" data-lc="X">審判・その他</button><button class="btn sm" data-lc="ball">ボール</button><button class="btn sm" data-lc="del">削除</button></div>
           <div class="actions" style="margin-top:6px"><button class="btn sm" id="labDraftBtn" title="AI検出の結果を下書きとして入れます">自動検出で下書き</button><button class="btn sm" id="labClearFrameBtn">枠を全消去</button></div>
-          <p class="note" id="labHint">選んだ種類で、動画上をドラッグして枠を描きます。既にある枠をクリックすると今の種類に変わり、ドラッグで移動、角をドラッグで大きさ変更。ボールはクリックだけでも置けます。キー: 1=A 2=B 3=審判 4=ボール 0=削除</p>
+          <p class="note" id="labHint"><b>直したら必ず「このフレームを保存」（Enter）</b>。「次の場面へ」を押した場合は自動で保存されます。選んだ種類で、動画上をドラッグして枠を描きます。既にある枠をクリックすると今の種類に変わり、ドラッグで移動、角をドラッグで大きさ変更。ボールはクリックだけでも置けます。キー: 1=A 2=B 3=審判 4=ボール 0=削除</p>
         </div>
         <p class="note" id="labNote">保存済み 0フレーム</p>
-        <div class="actions"><button class="btn sm" id="labNextBtn" title="15秒先へ移動してラベル付けを続けます">次の場面へ（+15秒）</button><button class="btn sm" id="labExportBtn" title="画像とYOLO形式のラベルをZIPにまとめます（PCでの追加学習用）">教師データを書き出し(ZIP)</button><button class="btn sm" id="labReteamBtn" title="保存したラベルの色から、解析結果のチーム判定をやり直します">ラベルでチーム判定をやり直す</button><button class="btn sm" id="labClearAllBtn">全削除</button></div>
+        <p class="note">教師データは動画ファイル名ごとにこのブラウザ内へ保存され、プロジェクトの新規作成や「新しく始める」では消えません。別のPC・ブラウザへ移すときや念のためのバックアップには ZIP 書き出し → 読み込みを使ってください。</p>
+        <div class="actions"><button class="btn sm" id="labNextBtn" title="15秒先へ移動してラベル付けを続けます">次の場面へ（+15秒）</button><button class="btn sm" id="labExportBtn" title="画像とYOLO形式のラベルをZIPにまとめます（PCでの追加学習用・バックアップ）">教師データを書き出し(ZIP)</button><button class="btn sm" id="labImportBtn" title="書き出したZIPを読み戻します（別のPCやブラウザに移すとき）">読み込み(ZIP)</button><input type="file" id="labImportFile" accept=".zip" hidden><button class="btn sm" id="labReteamBtn" title="保存したラベルの色から、解析結果のチーム判定をやり直します">ラベルでチーム判定をやり直す</button><button class="btn sm" id="labClearAllBtn">全削除</button></div>
       </section>
 
       <section>
@@ -899,10 +900,11 @@ function drawLabelOverlay(g,r,I){ const cur=S.lab.cur; if(!cur) return; g.fillSt
 async function labLoad(key){ S.lab.key=key; S.lab.frames=[]; try{ const rec=await idb.get('lab:'+key); if(rec&&rec.frames) S.lab.frames=rec.frames; }catch(e){} renderLab(); }
 async function labStore(){ if(!S.lab.key) return; const ok=await idb.set('lab:'+S.lab.key,{frames:S.lab.frames}); if(!ok) toast('教師データを保存できませんでした（ブラウザの保存領域）',5000); }
 function grabFrameJpeg(){ return new Promise(res=>{ const el=S.source.el, W=S.source.width, H=S.source.height; const cv=document.createElement('canvas'); cv.width=W; cv.height=H; cv.getContext('2d').drawImage(el,0,0,W,H); cv.toBlob(b=>res(b),'image/jpeg',0.9); }); }
-async function labSaveFrame(){ if(!S.lab.cur||!S.source||S.source.kind==='youtube') return; const t=now(); const W=S.source.width,H=S.source.height; const boxes=S.lab.cur.boxes.filter(b=>b.w>0&&b.h>0).map(b=>{ const o={c:b.c,u:+b.u.toFixed(4),v:+b.v.toFixed(4),w:+b.w.toFixed(4),h:+b.h.toFixed(4)}; if(b.c==='A'||b.c==='B'||b.c==='X'){ const col=sampleColor(S.source.el,b,W,H); if(col) o.f=colorFeat(col).map(v=>+v.toFixed(3)); } return o; });
-  if(!boxes.length) return toast('枠がありません');
+function labDirty(){ const cur=S.lab.cur; if(!cur||!cur.boxes.length) return false; const saved=labCurFrame(); if(!saved) return true; const norm=b=>[b.c,b.u.toFixed(3),b.v.toFixed(3),b.w.toFixed(3),b.h.toFixed(3)].join(','); const a=cur.boxes.map(norm).sort().join('|'), b=saved.boxes.map(norm).sort().join('|'); return a!==b; }
+async function labSaveFrame(){ if(!S.source||S.source.kind==='youtube') return false; if(!S.lab.cur){ toast('先に「この場面をラベル付け」を押してください'); return false; } const t=now(); const W=S.source.width,H=S.source.height; const boxes=S.lab.cur.boxes.filter(b=>b.w>0&&b.h>0).map(b=>{ const o={c:b.c,u:+b.u.toFixed(4),v:+b.v.toFixed(4),w:+b.w.toFixed(4),h:+b.h.toFixed(4)}; if(b.c==='A'||b.c==='B'||b.c==='X'){ const col=sampleColor(S.source.el,b,W,H); if(col) o.f=colorFeat(col).map(v=>+v.toFixed(3)); } return o; });
+  if(!boxes.length){ toast('枠がありません'); return false; }
   const jpg=await grabFrameJpeg(); const fr={t:+t.toFixed(2),w:W,h:H,boxes,jpg}; const i=S.lab.frames.findIndex(f=>Math.abs(f.t-t)<0.03); if(i>=0) S.lab.frames[i]=fr; else S.lab.frames.push(fr); S.lab.frames.sort((a,b)=>a.t-b.t);
-  await labStore(); renderLab(); const n=labCounts(); toast(`保存しました（${S.lab.frames.length}フレーム目）。次の場面へ進んで続けてください。目安: 各チーム100枠・ボール50枠以上`,5000); }
+  await labStore(); renderLab(); toast(`保存しました（${S.lab.frames.length}フレーム目）。次の場面へ進んで続けてください。目安: 各チーム100枠・ボール50枠以上`,5000); return true; }
 // supervised team classifier from labelled boxes (k-nearest neighbours on the uniform colour feature)
 function labSupervisor(){ const pts=[]; for(const f of S.lab.frames) for(const b of f.boxes) if(b.f&&(b.c==='A'||b.c==='B'||b.c==='X')) pts.push({c:b.c,f:b.f});
   const nA=pts.filter(p=>p.c==='A').length, nB=pts.filter(p=>p.c==='B').length; if(nA<3||nB<3) return null;
@@ -929,11 +931,25 @@ async function labExport(){ if(!S.lab.frames.length) return toast('保存済み�
   files.push({name:'data_team.yaml',data:enc.encode(`# same images with team classes (this game's uniforms only)\npath: .\ntrain: images/train\nval: images/train\nnames:\n  0: ${P().teams.A.name}\n  1: ${P().teams.B.name}\n  2: ball\n  3: other\n`)});
   files.push({name:'meta.json',data:enc.encode(JSON.stringify({video:S.lab.key,teams:{A:P().teams.A.name,B:P().teams.B.name},frames:S.lab.frames.map(f=>({t:f.t,w:f.w,h:f.h,boxes:f.boxes}))},null,1))});
   const blob=makeZip(files); download(`courttrace_labels_${base}.zip`,blob); toast(`書き出しました: ${S.lab.frames.length}フレーム・${files.length}ファイル`,4000); }
-$('#labModeBtn').addEventListener('click',()=>{ if(!S.source) return toast('先に動画を開いてください'); if(S.source.kind==='youtube') return toast('YouTube動画からは画像を取り出せません。動画ファイルを「動画を開く」で読み込んでください',6000); setVMode(S.vmode==='label'?'track':'label'); });
-$('#labSaveBtn').addEventListener('click',labSaveFrame); $('#labExitBtn').addEventListener('click',()=>setVMode('track'));
+$('#labModeBtn').addEventListener('click',()=>{ if(!S.source) return toast('先に動画を開いてください'); if(S.source.kind==='youtube') return toast('YouTube動画からは画像を取り出せません。動画ファイルを「動画を開く」で読み込んでください',6000); if(S.vmode==='label') labExit(); else setVMode('label'); });
+$('#labSaveBtn').addEventListener('click',labSaveFrame); $('#labExitBtn').addEventListener('click',labExit);
+async function labExit(){ if(S.vmode==='label'&&labDirty()){ const v=await ask('この場面の枠はまだ保存されていません。',[{label:'保存せず終了',value:'drop'},{label:'キャンセル',value:null},{label:'保存して終了',value:'save',primary:true}]); if(!v) return; if(v==='save'){ const ok=await labSaveFrame(); if(!ok) return; } } setVMode('track'); }
 $$('#labTools [data-lc]').forEach(b=>b.addEventListener('click',()=>labSetCls(b.dataset.lc)));
 $('#labDraftBtn').addEventListener('click',labDraft); $('#labClearFrameBtn').addEventListener('click',()=>{ if(S.lab.cur) S.lab.cur.boxes=[]; });
-$('#labNextBtn').addEventListener('click',async()=>{ if(!S.source) return; const dur=S.source.duration||1e9; const t=Math.min(dur-0.1,now()+15); await (S.source.seekAsync?S.source.seekAsync(t):Promise.resolve(seek(t))); if(S.vmode==='label'){ await new Promise(r=>setTimeout(r,150)); const cur=labCurFrame(); S.lab.cur={t:now(),boxes:cur?cur.boxes.map(b=>({...b})):[]}; if(!cur) await labDraft(); renderLab(); } else setVMode('label'); });
+$('#labNextBtn').addEventListener('click',async()=>{ if(!S.source) return; if(S.vmode==='label'&&labDirty()){ const ok=await labSaveFrame(); if(!ok) return; await new Promise(r=>setTimeout(r,300)); } const dur=S.source.duration||1e9; const t=Math.min(dur-0.1,now()+15); await (S.source.seekAsync?S.source.seekAsync(t):Promise.resolve(seek(t))); if(S.vmode==='label'){ await new Promise(r=>setTimeout(r,150)); const cur=labCurFrame(); S.lab.cur={t:now(),boxes:cur?cur.boxes.map(b=>({...b})):[]}; if(!cur) await labDraft(); renderLab(); } else setVMode('label'); });
+async function readZip(buf){ const dv=new DataView(buf), u8=new Uint8Array(buf); let eocd=-1; for(let i=buf.byteLength-22;i>=Math.max(0,buf.byteLength-70000);i--){ if(dv.getUint32(i,true)===0x06054b50){ eocd=i; break; } } if(eocd<0) throw new Error('ZIPではありません');
+  const n=dv.getUint16(eocd+10,true), cd=dv.getUint32(eocd+16,true); const dec=new TextDecoder(); const out=[]; let p=cd;
+  for(let i=0;i<n;i++){ if(dv.getUint32(p,true)!==0x02014b50) break; const method=dv.getUint16(p+10,true), csize=dv.getUint32(p+20,true), nlen=dv.getUint16(p+28,true), xlen=dv.getUint16(p+30,true), clen=dv.getUint16(p+32,true), off=dv.getUint32(p+42,true); const name=dec.decode(u8.subarray(p+46,p+46+nlen)); p+=46+nlen+xlen+clen;
+    const ln=dv.getUint16(off+26,true), lx=dv.getUint16(off+28,true); const start=off+30+ln+lx; let data=u8.slice(start,start+csize);
+    if(method===8){ const ds=new DecompressionStream('deflate-raw'); const w=ds.writable.getWriter(); w.write(data); w.close(); data=new Uint8Array(await new Response(ds.readable).arrayBuffer()); } else if(method!==0) continue;
+    out.push({name,data}); }
+  return out; }
+async function labImport(file){ try{ const entries=await readZip(await file.arrayBuffer()); const meta=entries.find(e=>e.name==='meta.json'); if(!meta) throw new Error('meta.json がありません（このアプリで書き出したZIPを選んでください）'); const m=JSON.parse(new TextDecoder().decode(meta.data));
+    const imgs=entries.filter(e=>e.name.startsWith('images/train/')&&e.name.endsWith('.jpg')); const byT=new Map(); for(const e of imgs){ const mm=e.name.match(/_(\d{7})\.jpg$/); if(mm) byT.set(Math.round(+mm[1]),e); }
+    let added=0, replaced=0; for(const f of (m.frames||[])){ const e=byT.get(Math.round(f.t*100)); if(!e) continue; const fr={t:f.t,w:f.w,h:f.h,boxes:f.boxes,jpg:new Blob([e.data],{type:'image/jpeg'})}; const i=S.lab.frames.findIndex(x=>Math.abs(x.t-f.t)<0.03); if(i>=0){ S.lab.frames[i]=fr; replaced++; } else { S.lab.frames.push(fr); added++; } }
+    S.lab.frames.sort((a,b)=>a.t-b.t); await labStore(); renderLab(); toast(`教師データを読み込みました: 追加 ${added}・上書き ${replaced}フレーム（合計 ${S.lab.frames.length}）`,6000); }catch(e){ toast('読み込めませんでした: '+e.message,6000); } }
+$('#labImportBtn').addEventListener('click',()=>{ if(!S.source||S.source.kind!=='video') return toast('先に動画ファイルを開いてください（その動画の教師データとして保存されます）',5000); $('#labImportFile').click(); });
+$('#labImportFile').addEventListener('change',e=>{ const f=e.target.files[0]; e.target.value=''; if(f) labImport(f); });
 $('#labExportBtn').addEventListener('click',labExport); $('#labReteamBtn').addEventListener('click',labReteam);
 $('#labClearAllBtn').addEventListener('click',async()=>{ if(!S.lab.frames.length) return; const ok=await ask(`この動画の教師データ ${S.lab.frames.length}フレームをすべて削除しますか？`,[{label:'キャンセル',value:false},{label:'削除する',value:true,primary:true}]); if(!ok) return; S.lab.frames=[]; await labStore(); renderLab(); });
 
@@ -1703,7 +1719,7 @@ try{ if(localStorage.getItem('courttrace:guide')==='off'){ $('#guide').hidden=tr
 document.addEventListener('keydown',e=>{
   if(e.target.matches('input,select,textarea')) return;
   if(e.key==='Escape'&&S.pendingShot){ S.pendingShot=null; $('#pendMsg').hidden=true; renderStats(); return; }
-  if(S.vmode==='label'&&!e.ctrlKey&&!e.metaKey){ const map={'1':'A','2':'B','3':'X','4':'ball','0':'del'}; if(map[e.key]){ labSetCls(map[e.key]); return; } if(e.key==='Enter'){ e.preventDefault(); labSaveFrame(); return; } if(e.key==='Escape'){ setVMode('track'); return; } }
+  if(S.vmode==='label'&&!e.ctrlKey&&!e.metaKey){ const map={'1':'A','2':'B','3':'X','4':'ball','0':'del'}; if(map[e.key]){ labSetCls(map[e.key]); return; } if(e.key==='Enter'){ e.preventDefault(); labSaveFrame(); return; } if(e.key==='Escape'){ labExit(); return; } }
   if(e.code==='Space'){ e.preventDefault(); togglePlay(); }
   else if(e.key==='ArrowLeft'){ e.preventDefault(); seek(now()-(e.shiftKey?1:1/FPS)); }
   else if(e.key==='ArrowRight'){ e.preventDefault(); seek(now()+(e.shiftKey?1:1/FPS)); }
@@ -1725,7 +1741,7 @@ function frame(ts){
 }
 function refreshRosterStatus(){ const t=now(); $$('#roster .prow').forEach((row,i)=>{}); const rows=[...$('#roster').querySelectorAll('.prow:not(.ballrow)')]; const ps=[...P().players.filter(p=>p.team==='A'),...P().players.filter(p=>p.team==='B')]; rows.forEach((row,i)=>{ const p=ps[i]; if(!p) return; const st=row.querySelector('.st'); const pos=playerPos(p,t); const cls=pos?'vis':p.kfs.length?'hid':''; st.className='st '+cls; st.textContent=pos?'表示中':p.kfs.length?'画面外':'未入力'; const cv=coverage(p.kfs); row.querySelector('.kfc').textContent=cv!=null?Math.round(cv*100)+'%':p.kfs.length+'KF'; if(cv!=null){ row.style.background=`linear-gradient(90deg, rgba(58,157,93,.18) ${Math.round(cv*100)}%, transparent ${Math.round(cv*100)}%)`; row.classList.toggle('done',cv>=0.9); } }); const br=$('#roster .ballrow'); if(br){ const bp=ballPos(t); const st=br.querySelector('.st'); st.className='st '+(bp?'vis':P().ball.kfs.length?'hid':''); st.textContent='ボール '+(bp?'':P().ball.kfs.length?'(非表示)':'(未入力)'); br.querySelector('.kfc').textContent=P().ball.kfs.length+'KF'; } }
 renderRoster(); renderCalibList(); applySettingsUI(); setVMode('track'); renderStats();
-if(new URLSearchParams(location.search).has('debug')) window.__ct={loadProjectData,labReteam,labSupervisor,labExport,makeZip,pinnedFitPts,estimateCamZ,decomposeH,composeH,constrainH,pinnedFit,recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,LM,LANDMARKS,C,COURT_PATHS,ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
+if(new URLSearchParams(location.search).has('debug')) window.__ct={labImport,readZip,loadProjectData,labReteam,labSupervisor,labExport,makeZip,pinnedFitPts,estimateCamZ,decomposeH,composeH,constrainH,pinnedFit,recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,LM,LANDMARKS,C,COURT_PATHS,ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
 { const q=new URLSearchParams(location.search).get('src'); if(q){ S.project=newProject(); S.project.name=q.split('/').pop(); mount(new VideoSource(q)); renderRoster(); renderCalibList(); } }
 requestAnimationFrame(frame);
 })();

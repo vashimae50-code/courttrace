@@ -85,12 +85,17 @@ def main():
     ap.add_argument('--batch', type=int, default=4)
     ap.add_argument('--device', default='cpu', help="'cpu' または GPU 番号 '0'")
     ap.add_argument('--out', default='runs/courttrace')
+    ap.add_argument('--min-images', type=int, default=10, help='これより少ない枚数では学習しない（少なすぎると精度が落ちるため）')
     a = ap.parse_args()
 
     from ultralytics import YOLO
     work = Path('dataset_tmp'); shutil.rmtree(work, ignore_errors=True)
     yaml, n, n_val = unpack(a.zips, work)
     print(f'画像 {n} 枚（検証用 {n_val} 枚）を展開しました → {work}')
+    if n < a.min_images:
+        sys.exit(f'\n画像が {n} 枚しかありません。{a.min_images} 枚未満で学習すると、同梱モデルより精度が下がります。\n'
+                 f'アプリでラベル付けを {a.min_images} フレーム以上（できれば 30〜60）保存してから、もう一度 ZIP を書き出してください。\n'
+                 f'（どうしても試す場合は --min-images 1 を付けて実行）')
 
     name = time.strftime('%Y%m%d_%H%M')
     model = YOLO(a.model)

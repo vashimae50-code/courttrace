@@ -696,7 +696,7 @@ function openYouTubeFromInput(){ const r=parseYouTube($('#ytUrl').value); if(!r)
 const viewport=$('#viewport'), ov=$('#ov'), emptyMsg=$('#emptyMsg');
 function mount(src){
   if(S.source) S.source.destroy();
-  S.source=src; S.detections=[]; stopTracking(); S.wiz=null; S.lm=null; S.scan=null; if($('#clusterBox')) $('#clusterBox').hidden=true;
+  S.source=src; S.detections=[]; stopTracking(); S.wiz=null; S.lm=null; S.scan=null; camSideRef=null; if($('#clusterBox')) $('#clusterBox').hidden=true;
   if(!src.key) src.key=src.name;
   P().source = src.kind==='youtube' ? {type:'youtube',id:src.id} : src.kind==='video' ? {type:'file',name:src.name} : {type:'demo'};
   viewport.insertBefore(src.el, ov); emptyMsg.hidden=true;
@@ -1439,6 +1439,9 @@ class CamTracker{
 const I3=[[1,0,0],[0,1,0],[0,0,1]];
 // Is this homography physically plausible? court centre and corners must project to a sane image area, centre in front of the camera.
 function saneH(H){ const Hi=mat3inv(H); if(!Hi) return false; const c=applyH(Hi,C.L/2,C.W/2); if(!c||c[2]<=0) return false; for(const p of [[0,0],[C.L,0],[C.L,C.W],[0,C.W],[C.L/2,C.W/2]]){ const q=applyH(Hi,p[0],p[1]); if(!q||Math.abs(q[0])>8||Math.abs(q[1])>8) return false; } const a=applyH(Hi,0,C.W/2), b=applyH(Hi,C.L,C.W/2); if(a&&b){ const span=Math.hypot(a[0]-b[0],a[1]-b[1]); if(span<0.15||span>12) return false; } return true; }
+let camSideRef=null; // {y, near:boolean} — which sideline the real camera is on
+function camSideReference(){ const cam=P().settings.cam; if(cam&&cam.y!=null) return {y:cam.y,near:cam.y<C.W/2}; const W=S.source?S.source.width:1920, Hh=S.source?S.source.height:1080; const ys=P().calibs.filter(c=>c.H).map(c=>{ const d=decomposeH(c.H,W,Hh); return d?d.C[1]:null; }).filter(v=>v!=null); if(!ys.length) return null; const y=median(ys); return {y,near:y<C.W/2}; }
+function camSideOK(H){ if(!camSideRef) camSideRef=camSideReference(); if(!camSideRef) return true; const W=S.source?S.source.width:1920, Hh=S.source?S.source.height:1080; const d=decomposeH(H,W,Hh); if(!d||!isFinite(d.C[1])) return true; const y=d.C[1]; const margin=1.5; return camSideRef.near ? (y < C.W/2+margin) : (y > C.W/2-margin); }
 function courtCentreImg(H){ const Hi=mat3inv(H); if(!Hi) return null; const c=applyH(Hi,C.L/2,C.W/2); return c?[c[0],c[1]]:null; }
 // ---------- Fixed-camera model. Decompose H (court ← normalized image) into focal length, rotation and camera centre
 // (square pixels, principal point at the frame centre); recompose with the camera pinned at a given position.
@@ -1496,6 +1499,7 @@ async function runScanInner(a,b){
   const wasMuted=el.muted; el.muted=true; const prevRate=el.playbackRate;
   const frames=[], tracks=[], Hs=[], segs=[]; let active=[], nextId=1; const t0=performance.now(); const startT=now();
   await S.source.seekAsync(a);
+  camSideRef=camSideReference(); let sideFlips=0;
   const tracker=new CamTracker(el); let ai=0; for(let i=0;i<anchors.length;i++) if(anchors[i].t<=a+1e-3) ai=i; tracker.reset(anchors[ai]); let segStart=a;
   let lastT=-1, lastDet=-1e9, lastRec=-1e9, detBusy=false, lostFrames=0, frameCount=0, lastRefine=-1e9, refineOk=0, refineMiss=0, lastSnapOk=a, subSteps=0, lastRecap=-1e9, recaptures=0, lastReloc=-1e9, relocs=0, relocsWeak=0, lastKF=-1e9, insaneSteps=0, prevCentre=null; const useLines=$('#useLines').checked; const keyframes=[]; const allAnchors=()=>anchors.concat(keyframes);
   const ingest=(t,dets,Hc,balls)=>{
@@ -1520,12 +1524,13 @@ async function runScanInner(a,b){
       try{ tracker.restore(snap); subSteps++; for(let k=1;k<=3;k++){ await seekStep(+(ct-stepT+stepT*k/3).toFixed(3)); inl=tracker.step(); } }catch(e){ console.warn(e); } }
     if(inl<0) lostFrames++; let Ht=tracker.H(); if(!Ht) continue;
     { const cc=courtCentreImg(Ht); const jump=(cc&&prevCentre)?Math.hypot(cc[0]-prevCentre[0],cc[1]-prevCentre[1]):0;
-      if(!saneH(Ht) || jump>0.35){ insaneSteps++; let fixed=false; if(ct-lastReloc>=0.4){ lastReloc=ct; const rl=tracker.relocalize(allAnchors()); if(rl){ const H2=tracker.H(); if(H2&&saneH(H2)){ Ht=H2; fixed=true; relocs++; } } }
+      const sideBad=!camSideOK(Ht); if(sideBad) sideFlips++;
+      if(!saneH(Ht) || jump>0.35 || sideBad){ insaneSteps++; let fixed=false; if(ct-lastReloc>=0.4){ lastReloc=ct; const rl=tracker.relocalize(allAnchors()); if(rl){ const H2=tracker.H(); if(H2&&saneH(H2)&&camSideOK(H2)){ Ht=H2; fixed=true; relocs++; } } }
         if(!fixed){ try{ tracker.restore(snap); }catch(e){} S.liveInl=-1; lostFrames++; continue; } }
       prevCentre=courtCentreImg(Ht); }
-    if(useLines && ct-lastRefine>=0.1-1e-6){ lastRefine=ct; try{ const map=whitenessMap(el); let rf=refineToLines(el,Ht,{map,radii:[14,8,4]}); let shift=rf?hShiftPx(Ht,rf.H):Infinity; let accept = rf && rf.inliers>=35 && rf.score>=0.28 && shift<12;
-        if(!accept && ct-lastSnapOk>0.8 && ct-lastRecap>=0.5){ lastRecap=ct; const rc=recaptureToLines(el,Ht,map); if(rc && rc.inliers>=40 && rc.score>=0.33){ rf=rc; accept=true; recaptures++; } }
-        if(!accept && ct-lastSnapOk>1.0 && ct-lastReloc>=1.0){ lastReloc=ct; const rl=tracker.relocalize(allAnchors()); if(rl){ const H2=tracker.H(); const rr=H2?refineToLines(el,H2,{map,radii:[20,12,6]}):null; if(rr && rr.inliers>=35 && rr.score>=0.3){ rf=rr; accept=true; relocs++; } else if(H2){ Ht=H2; relocsWeak++; } } }
+    if(useLines && ct-lastRefine>=0.1-1e-6){ lastRefine=ct; try{ const map=whitenessMap(el); let rf=refineToLines(el,Ht,{map,radii:[14,8,4]}); let shift=rf?hShiftPx(Ht,rf.H):Infinity; let accept = rf && rf.inliers>=35 && rf.score>=0.28 && shift<12 && camSideOK(rf.H);
+        if(!accept && ct-lastSnapOk>0.8 && ct-lastRecap>=0.5){ lastRecap=ct; const rc=recaptureToLines(el,Ht,map); if(rc && rc.inliers>=40 && rc.score>=0.33 && camSideOK(rc.H)){ rf=rc; accept=true; recaptures++; } else if(rc&&!camSideOK(rc.H)) sideFlips++; }
+        if(!accept && ct-lastSnapOk>1.0 && ct-lastReloc>=1.0){ lastReloc=ct; const rl=tracker.relocalize(allAnchors()); if(rl){ const H2=tracker.H(); const rr=H2?refineToLines(el,H2,{map,radii:[20,12,6]}):null; if(rr && rr.inliers>=35 && rr.score>=0.3 && camSideOK(rr.H)){ rf=rr; accept=true; relocs++; } else if(H2&&camSideOK(H2)){ Ht=H2; relocsWeak++; } else if(H2){ sideFlips++; try{ tracker.restore(snap); }catch(e){} } } }
         if(accept){ tracker.rebase(rf.H); Ht=rf.H; refineOk++; lastSnapOk=ct; S.liveRefine=rf;
           if(rf.score>=0.42 && rf.inliers>=110 && ct-lastKF>=3 && saneH(rf.H)){ const cc=courtCentreImg(rf.H); const novel=!allAnchors().some(an=>{ const c2=courtCentreImg(an.H); return c2&&Math.hypot(c2[0]-cc[0],c2[1]-cc[1])<0.12; }); if(novel){ try{ keyframes.push({t:ct,H:rf.H,orb:tracker.orbOf(tracker.prev.data[0]),auto:true}); if(keyframes.length>60) keyframes.shift(); lastKF=ct; }catch(e){} } } }
         else { refineMiss++; S.liveRefine=rf?{...rf,rejected:true}:null; } }catch(e){ console.warn(e); } }
@@ -1569,7 +1574,7 @@ async function runScanInner(a,b){
   const badTxt=bad.length?` 追跡が不安定だった時間帯: ${bad.slice(0,8).map(x=>fmt(x.a)+'〜'+fmt(x.b)).join(', ')}${bad.length>8?' ほか':''}（タイムライン上部の赤印。この付近に位置合わせを追加して再解析すると改善します）`:' カメラ追跡は全区間で安定していました。';
   const errTxt=(segErr.length?' アンカー間のズレ補正量: '+segErr.map(e=>`${fmt(e.t0)}〜${fmt(e.t1)} ${e.err!=null?e.err.toFixed(1)+'m':'?'}`).join(' / ')+'（2mを超える区間は途中に位置合わせを足すと改善します）':' アンカーが1つだけなので、ズレは時間とともに積み重なります。カメラが動く映像では1分ごとに位置合わせを追加してください。')+badTxt;
   if(!good.length){ $('#scanNote').textContent='解析は終わりましたが、コート上に人物を検出できませんでした。位置合わせが合っているか（緑の線がコートに重なるか）、映像に選手が十分な大きさで映っているかを確認してください。'; toast('人物を検出できませんでした',5000); renderRoster(); return; }
-  $('#scanNote').textContent=`解析完了（${((performance.now()-t0)/1000/60).toFixed(1)}分、検出 ${which==='yolo'?(yolo&&yolo.url&&yolo.url.includes('10s')?'YOLOv10s':'YOLOv10n'):'COCO-SSD'}、人の動き ${good.length} 本、ボール検出 ${ballKeep.length} 回、カメラ追跡の失敗 ${lostFrames}/${frameCount} フレーム${useLines?`、白線への吸着 成功 ${refineOk} / 失敗 ${refineMiss}`:''}、速い動きの細分化 ${subSteps}回、見失いからの再捕捉 ${recaptures}回、再照合 ${relocs}回、自動キーフレーム ${keyframes.length}枚、不正な推定を棄却 ${insaneSteps}回）。ボードに自動コマが出ています。チームの色分けが逆なら下で入れ替えてください。`+errTxt;
+  $('#scanNote').textContent=`解析完了（${((performance.now()-t0)/1000/60).toFixed(1)}分、検出 ${which==='yolo'?(yolo&&yolo.url&&yolo.url.includes('10s')?'YOLOv10s':'YOLOv10n'):'COCO-SSD'}、人の動き ${good.length} 本、ボール検出 ${ballKeep.length} 回、カメラ追跡の失敗 ${lostFrames}/${frameCount} フレーム${useLines?`、白線への吸着 成功 ${refineOk} / 失敗 ${refineMiss}`:''}、速い動きの細分化 ${subSteps}回、見失いからの再捕捉 ${recaptures}回、再照合 ${relocs}回、自動キーフレーム ${keyframes.length}枚、不正な推定を棄却 ${insaneSteps}回、左右の取り違えを棄却 ${sideFlips}回）。ボードに自動コマが出ています。チームの色分けが逆なら下で入れ替えてください。`+errTxt;
   toast('自動解析が完了しました。再生するとボードで全員が動きます。',5000); renderRoster();
 }
 $('#autoAllBtn').addEventListener('click',async()=>{ if(!S.source) return toast('先に動画を開いてください'); const d=S.source.duration||0; if(!d) return toast('動画の長さが取れません'); if(S.scan&&!(await confirmAsk('既存の解析結果を置き換えますか？'))) return; runScan(0,d); });
@@ -1756,7 +1761,7 @@ function frame(ts){
 }
 function refreshRosterStatus(){ const t=now(); $$('#roster .prow').forEach((row,i)=>{}); const rows=[...$('#roster').querySelectorAll('.prow:not(.ballrow)')]; const ps=[...P().players.filter(p=>p.team==='A'),...P().players.filter(p=>p.team==='B')]; rows.forEach((row,i)=>{ const p=ps[i]; if(!p) return; const st=row.querySelector('.st'); const pos=playerPos(p,t); const cls=pos?'vis':p.kfs.length?'hid':''; st.className='st '+cls; st.textContent=pos?'表示中':p.kfs.length?'画面外':'未入力'; const cv=coverage(p.kfs); row.querySelector('.kfc').textContent=cv!=null?Math.round(cv*100)+'%':p.kfs.length+'KF'; if(cv!=null){ row.style.background=`linear-gradient(90deg, rgba(58,157,93,.18) ${Math.round(cv*100)}%, transparent ${Math.round(cv*100)}%)`; row.classList.toggle('done',cv>=0.9); } }); const br=$('#roster .ballrow'); if(br){ const bp=ballPos(t); const st=br.querySelector('.st'); st.className='st '+(bp?'vis':P().ball.kfs.length?'hid':''); st.textContent='ボール '+(bp?'':P().ball.kfs.length?'(非表示)':'(未入力)'); br.querySelector('.kfc').textContent=P().ball.kfs.length+'KF'; } }
 renderRoster(); renderCalibList(); applySettingsUI(); setVMode('track'); renderStats();
-if(new URLSearchParams(location.search).has('debug')) window.__ct={labImport,readZip,loadProjectData,labReteam,labSupervisor,labExport,makeZip,pinnedFitPts,estimateCamZ,decomposeH,composeH,constrainH,pinnedFit,recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,LM,LANDMARKS,C,COURT_PATHS,ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
+if(new URLSearchParams(location.search).has('debug')) window.__ct={camSideOK,camSideReference,labImport,readZip,loadProjectData,labReteam,labSupervisor,labExport,makeZip,pinnedFitPts,estimateCamZ,decomposeH,composeH,constrainH,pinnedFit,recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,LM,LANDMARKS,C,COURT_PATHS,ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
 { const q=new URLSearchParams(location.search).get('src'); if(q){ S.project=newProject(); S.project.name=q.split('/').pop(); mount(new VideoSource(q)); renderRoster(); renderCalibList(); } }
 requestAnimationFrame(frame);
 })();

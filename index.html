@@ -902,11 +902,11 @@ function drawLabelOverlay(g,r,I){ const cur=S.lab.cur; if(!cur) return; g.fillSt
 // persistence: one record per video in IndexedDB (JPEG blobs included)
 async function labLoad(key){ S.lab.key=key; S.lab.frames=[]; try{ const rec=await idb.get('lab:'+key); if(rec&&rec.frames) S.lab.frames=rec.frames; }catch(e){} renderLab(); }
 async function labStore(){ if(!S.lab.key&&S.source&&S.source.key) S.lab.key=S.source.key; if(!S.lab.key){ toast('教師データを保存できませんでした（動画が開かれていません）',5000); return false; } const ok=await idb.set('lab:'+S.lab.key,{frames:S.lab.frames}); if(!ok){ toast('教師データを保存できませんでした（ブラウザの保存領域）',5000); return false; } const back=await idb.get('lab:'+S.lab.key); if(!back||!back.frames||back.frames.length!==S.lab.frames.length){ toast('教師データの保存を確認できませんでした。ZIPで書き出して控えを取ってください',6000); return false; } return true; }
-function grabFrameJpeg(){ return new Promise(res=>{ const el=S.source.el, W=S.source.width, H=S.source.height; const cv=document.createElement('canvas'); cv.width=W; cv.height=H; cv.getContext('2d').drawImage(el,0,0,W,H); cv.toBlob(b=>res(b),'image/jpeg',0.9); }); }
+function grabFrameJpeg(){ return new Promise(res=>{ const el=S.source.el; let W=S.source.width, H=S.source.height; const sc=Math.min(1,2560/W); W=Math.round(W*sc); H=Math.round(H*sc); const cv=document.createElement('canvas'); cv.width=W; cv.height=H; cv.getContext('2d').drawImage(el,0,0,W,H); cv.toBlob(b=>res(b),'image/jpeg',0.9); }); }
 function labDirty(){ const cur=S.lab.cur; if(!cur||!cur.boxes.length) return false; const saved=labCurFrame(); if(!saved) return true; const norm=b=>[b.c,b.u.toFixed(3),b.v.toFixed(3),b.w.toFixed(3),b.h.toFixed(3)].join(','); const a=cur.boxes.map(norm).sort().join('|'), b=saved.boxes.map(norm).sort().join('|'); return a!==b; }
 async function labSaveFrame(){ if(!S.source||S.source.kind==='youtube') return false; if(!S.lab.cur){ toast('先に「この場面をラベル付け」を押してください'); return false; } const t=now(); const W=S.source.width,H=S.source.height; const boxes=S.lab.cur.boxes.filter(b=>b.w>0&&b.h>0).map(b=>{ const o={c:b.c,u:+b.u.toFixed(4),v:+b.v.toFixed(4),w:+b.w.toFixed(4),h:+b.h.toFixed(4)}; if(b.c==='A'||b.c==='B'||b.c==='X'){ const col=sampleColor(S.source.el,b,W,H); if(col) o.f=colorFeat(col).map(v=>+v.toFixed(3)); } return o; });
   if(!boxes.length){ toast('枠がありません'); return false; }
-  const jpg=await grabFrameJpeg(); const fr={t:+t.toFixed(2),w:W,h:H,boxes,jpg}; const i=S.lab.frames.findIndex(f=>Math.abs(f.t-t)<0.03); if(i>=0) S.lab.frames[i]=fr; else S.lab.frames.push(fr); S.lab.frames.sort((a,b)=>a.t-b.t);
+  const jpg=await grabFrameJpeg(); const sc=Math.min(1,2560/W); const fr={t:+t.toFixed(2),w:Math.round(W*sc),h:Math.round(H*sc),boxes,jpg}; const i=S.lab.frames.findIndex(f=>Math.abs(f.t-t)<0.03); if(i>=0) S.lab.frames[i]=fr; else S.lab.frames.push(fr); S.lab.frames.sort((a,b)=>a.t-b.t);
   await labStore(); renderLab(); toast(`保存しました（${S.lab.frames.length}フレーム目）。次の場面へ進んで続けてください。目安: 各チーム100枠・ボール50枠以上`,5000); return true; }
 // supervised team classifier from labelled boxes (k-nearest neighbours on the uniform colour feature)
 function labSupervisor(){ const pts=[]; for(const f of S.lab.frames) for(const b of f.boxes) if(b.f&&(b.c==='A'||b.c==='B'||b.c==='X')) pts.push({c:b.c,f:b.f});
@@ -1288,7 +1288,7 @@ async function ensureYolo(){
     if(!sess){ if(!isCustom && url!=='model/yolov10n.onnx' && await urlExists('model/yolov10n.onnx')) url='model/yolov10n.onnx'; sess=await ort.InferenceSession.create(isCustom?srcArg:url,{executionProviders:['wasm']}); }
     const cv=document.createElement('canvas'); cv.width=YOLO_IN; cv.height=YOLO_IN; const g=cv.getContext('2d',{willReadFrequently:true});
     yolo={sess,ep,cv,g,url,custom:isCustom,clsMap:isCustom?{0:0,1:32,2:99}:{0:0,32:32},inName:sess.inputNames[0]||'images',outName:sess.outputNames[0]||'output0',buf:new Float32Array(3*YOLO_IN*YOLO_IN)};
-    $('#detNote').textContent=`検出モデル読み込み済み（${isCustom?'カスタム学習モデル':url.includes('10s')?'YOLOv10s':'YOLOv10n'}・${ep==='webgpu'?'GPU':'CPU'}実行）`; return yolo;
+    { const W=S.source?S.source.width:1920, Hh=S.source?S.source.height:1080; const g=tileGrid(W,Hh); $('#detNote').textContent=`検出モデル読み込み済み（${isCustom?'カスタム学習モデル':url.includes('10s')?'YOLOv10s':'YOLOv10n'}・${ep==='webgpu'?'GPU':'CPU'}実行${ep==='webgpu'?`・${W}×${Hh} を ${g.cols}×${g.rows}=${g.n} 分割で検出`:''}）`; } return yolo;
   })().catch(e=>{ yoloLoading=null; throw e; });
   return yoloLoading;
 }
@@ -1306,11 +1306,16 @@ async function yoloInfer(el,sx,sy,sw,sh){
   return res;
 }
 function nmsMerge(dets,iou=0.5){ dets.sort((a,b)=>b.score-a.score); const out=[]; for(const d of dets){ let dup=false; for(const o of out){ if(o.cls!==d.cls) continue; const ix=Math.max(0,Math.min(o.x+o.w,d.x+d.w)-Math.max(o.x,d.x)), iy=Math.max(0,Math.min(o.y+o.h,d.y+d.h)-Math.max(o.y,d.y)); const inter=ix*iy, u=o.w*o.h+d.w*d.h-inter; if(u>0&&inter/u>iou){ dup=true; break; } } if(!dup) out.push(d); } return out; }
-async function detectFrame(el,W,H){
+// tile layout for a frame: ~700 px tiles with 48 px overlap → 3x2 at 1080p, 4x3 at 2K(2560x1440), 6x4 at 4K
+function tileGrid(W,H){ const OV=48, TW=700; const cols=Math.min(8,Math.max(1,Math.ceil((W-OV)/(TW-OV)))), rows=Math.min(6,Math.max(1,Math.ceil((H-OV)/(TW-OV)))); const tw=Math.ceil((W+(cols-1)*OV)/cols), th=Math.ceil((H+(rows-1)*OV)/rows); return {cols,rows,tw,th,n:cols*rows}; }
+function tileTouchesCourt(H,x,y,w,h,W,Hh){ if(!H) return true; const M=(parseFloat($('#courtMargin').value)||0.7)+1.5; for(let j=0;j<=4;j++) for(let i=0;i<=4;i++){ const q=applyH(H,(x+w*i/4)/W,(y+h*j/4)/Hh); if(q&&q[2]>0&&q[0]>-M&&q[0]<C.L+M&&q[1]>-M&&q[1]<C.W+M) return true; } return false; }
+let lastTileStats={n:0,used:0};
+async function detectFrame(el,W,H,Hc){
   const y=await ensureYolo(); const tiles=[]; const OV=48;
-  if(y.ep==='webgpu'){ const tw=Math.ceil((W+2*OV)/3), th=Math.ceil((H+OV)/2); for(let j=0;j<2;j++) for(let i=0;i<3;i++){ const x=Math.min(i*(tw-OV),W-tw), yy=Math.min(j*(th-OV),H-th); tiles.push([Math.max(0,x),Math.max(0,yy),Math.min(tw,W),Math.min(th,H)]); } }
+  if(y.ep==='webgpu'){ const g=tileGrid(W,H); const {cols,rows,tw,th}=g; for(let j=0;j<rows;j++) for(let i=0;i<cols;i++){ const x=cols>1?Math.round(i*(W-tw)/(cols-1)):0, yy=rows>1?Math.round(j*(H-th)/(rows-1)):0; tiles.push([Math.max(0,x),Math.max(0,yy),Math.min(tw,W),Math.min(th,H)]); } }
   else { const tw=Math.ceil((W+OV)/2); tiles.push([0,0,tw,H],[W-tw,0,tw,H]); }
-  let all=[]; for(const t of tiles) all=all.concat(await yoloInfer(el,...t)); all=nmsMerge(all,0.5);
+  const use=Hc?tiles.filter(t=>tileTouchesCourt(Hc,t[0],t[1],t[2],t[3],W,H)):tiles; lastTileStats={n:tiles.length,used:use.length};
+  let all=[]; for(const t of use) all=all.concat(await yoloInfer(el,...t)); all=nmsMerge(all,0.5);
   const norm=d=>({u:d.x/W,v:d.y/H,w:d.w/W,h:d.h/H,score:d.score});
   return {persons:all.filter(d=>d.cls===0&&d.score>=0.3).map(norm), balls:all.filter(d=>d.cls===32&&d.score>=0.3).map(norm)};
 }
@@ -1327,7 +1332,7 @@ async function ensureDetector(){
     detector=await window.cocoSsd.load(local?{base:'lite_mobilenet_v2',modelUrl:'model/model.json'}:{base:'lite_mobilenet_v2'}); $('#detNote').textContent='モデル読み込み済み。枠をクリックすると足元がKFになります。'; return detector; })().catch(e=>{ detLoading=null; $('#detNote').textContent='AI検出を読み込めませんでした。ネットワーク制限のある環境（埋め込み表示など）では使えません。HTMLファイルをローカルで開くと動作します。'; throw e; });
   return detLoading;
 }
-async function detectNow(){ const W=S.source.width,H=S.source.height; try{ const r=await detectFrame(S.source.el,W,H); S.detections=r.persons; S.lastBalls=r.balls; return S.detections; }catch(e){ console.warn('YOLO failed, falling back to COCO-SSD',e); const d=await ensureDetector(); const res=await d.detect(S.source.el, 80, 0.3); S.detections=res.filter(r=>r.class==='person').map(r=>({u:r.bbox[0]/W,v:r.bbox[1]/H,w:r.bbox[2]/W,h:r.bbox[3]/H,score:r.score})); S.lastBalls=[]; return S.detections; } }
+async function detectNow(){ const W=S.source.width,H=S.source.height; try{ const cc=calibAt(now()); const r=await detectFrame(S.source.el,W,H,cc&&cc.H?cc.H:null); S.detections=r.persons; S.lastBalls=r.balls; return S.detections; }catch(e){ console.warn('YOLO failed, falling back to COCO-SSD',e); const d=await ensureDetector(); const res=await d.detect(S.source.el, 80, 0.3); S.detections=res.filter(r=>r.class==='person').map(r=>({u:r.bbox[0]/W,v:r.bbox[1]/H,w:r.bbox[2]/W,h:r.bbox[3]/H,score:r.score})); S.lastBalls=[]; return S.detections; } }
 async function ensureAnyDetector(){ try{ await ensureYolo(); return 'yolo'; }catch(e){ console.warn(e); await ensureDetector(); return 'coco'; } }
 const YT_NO_AI='YouTube動画は映像を読み取れないため、AI検出は使えません。動画をダウンロードして「動画を開く」で読み込むと使えます。';
 $('#detectBtn').addEventListener('click',async()=>{ if(!S.source) return toast('先に動画を開いてください'); if(S.source.kind==='youtube') return toast(YT_NO_AI,6000); try{ const r=await detectNow(); toast((r.length?`${r.length}人検出`:'人物を検出できませんでした')+(S.lastBalls&&S.lastBalls.length?`、ボール ${S.lastBalls.length}個`:'')+'。枠をクリックすると選択中の選手のKFになります',4000); }catch(e){ toast(e.message,5000); } });
@@ -1536,7 +1541,7 @@ async function runScanInner(a,b){
         else { refineMiss++; S.liveRefine=rf?{...rf,rejected:true}:null; } }catch(e){ console.warn(e); } }
     S.liveH={id:'live',t:ct,pts:{},H:Ht,Hi:mat3inv(Ht),scan:true,inl}; S.liveInl=inl;
     if(ct-lastRec>=0.2-1e-6){ lastRec=ct; Hs.push({t:ct,H:Ht,inl}); }
-    if(ct-lastDet>=dtDet-1e-6){ lastDet=ct; try{ const r = which==='yolo' ? await detectFrame(el,W,H) : await detector.detect(el,80,0.3).then(res=>({persons:res.filter(x=>x.class==='person').map(x=>({u:x.bbox[0]/W,v:x.bbox[1]/H,w:x.bbox[2]/W,h:x.bbox[3]/H,score:x.score})),balls:[]})); ingest(ct,r.persons,Ht,r.balls); tracker.personBoxes=r.persons; }catch(e){ console.warn(e); } }
+    if(ct-lastDet>=dtDet-1e-6){ lastDet=ct; try{ const r = which==='yolo' ? await detectFrame(el,W,H,Ht) : await detector.detect(el,80,0.3).then(res=>({persons:res.filter(x=>x.class==='person').map(x=>({u:x.bbox[0]/W,v:x.bbox[1]/H,w:x.bbox[2]/W,h:x.bbox[3]/H,score:x.score})),balls:[]})); ingest(ct,r.persons,Ht,r.balls); tracker.personBoxes=r.persons; }catch(e){ console.warn(e); } }
     if(frameCount%10===0){ const done=(ct-a)/(b-a); const el2=(performance.now()-t0)/1000; const eta=done>0.02?Math.round(el2/done-el2):null; $('#scanNote').innerHTML=`<span class="progress">解析中 ${fmt(ct)} / ${fmt(b)}（${Math.round(done*100)}%${eta!=null?'、残り約'+Math.max(1,Math.ceil(eta/60))+'分':''}） 追跡点 ${Math.max(0,inl)} ・ 検出 ${frames.length}回</span>`; await new Promise(r=>setTimeout(r,0)); }
   }
   el.pause(); el.playbackRate=prevRate; el.muted=wasMuted; stopTracking(); S.liveH=null; $('#autoAllBtn').disabled=false; $('#scanBtn').disabled=false;
@@ -1761,7 +1766,7 @@ function frame(ts){
 }
 function refreshRosterStatus(){ const t=now(); $$('#roster .prow').forEach((row,i)=>{}); const rows=[...$('#roster').querySelectorAll('.prow:not(.ballrow)')]; const ps=[...P().players.filter(p=>p.team==='A'),...P().players.filter(p=>p.team==='B')]; rows.forEach((row,i)=>{ const p=ps[i]; if(!p) return; const st=row.querySelector('.st'); const pos=playerPos(p,t); const cls=pos?'vis':p.kfs.length?'hid':''; st.className='st '+cls; st.textContent=pos?'表示中':p.kfs.length?'画面外':'未入力'; const cv=coverage(p.kfs); row.querySelector('.kfc').textContent=cv!=null?Math.round(cv*100)+'%':p.kfs.length+'KF'; if(cv!=null){ row.style.background=`linear-gradient(90deg, rgba(58,157,93,.18) ${Math.round(cv*100)}%, transparent ${Math.round(cv*100)}%)`; row.classList.toggle('done',cv>=0.9); } }); const br=$('#roster .ballrow'); if(br){ const bp=ballPos(t); const st=br.querySelector('.st'); st.className='st '+(bp?'vis':P().ball.kfs.length?'hid':''); st.textContent='ボール '+(bp?'':P().ball.kfs.length?'(非表示)':'(未入力)'); br.querySelector('.kfc').textContent=P().ball.kfs.length+'KF'; } }
 renderRoster(); renderCalibList(); applySettingsUI(); setVMode('track'); renderStats();
-if(new URLSearchParams(location.search).has('debug')) window.__ct={camSideOK,camSideReference,labImport,readZip,loadProjectData,labReteam,labSupervisor,labExport,makeZip,pinnedFitPts,estimateCamZ,decomposeH,composeH,constrainH,pinnedFit,recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,LM,LANDMARKS,C,COURT_PATHS,ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
+if(new URLSearchParams(location.search).has('debug')) window.__ct={get tileStats(){return lastTileStats;},tileGrid,camSideOK,camSideReference,labImport,readZip,loadProjectData,labReteam,labSupervisor,labExport,makeZip,pinnedFitPts,estimateCamZ,decomposeH,composeH,constrainH,pinnedFit,recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,LM,LANDMARKS,C,COURT_PATHS,ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
 { const q=new URLSearchParams(location.search).get('src'); if(q){ S.project=newProject(); S.project.name=q.split('/').pop(); mount(new VideoSource(q)); renderRoster(); renderCalibList(); } }
 requestAnimationFrame(frame);
 })();

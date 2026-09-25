@@ -1094,7 +1094,7 @@ function renderCalibList(){
   renderWizard();
 }
 // ---- calibration wizard: left court → confirm → (move time) → right court → confirm
-const WIZ_BASE={ L:['左 f0','左 f1','左 k0','左 k1','左 tt','左 fm','cc','h0','h1','左 c0','左 c1','左 rim'], R:['右 f0','右 f1','右 k0','右 k1','右 tt','右 fm','cc','h0','h1','右 c0','右 c1','右 rim'], C:['cc','h0','h1','左 tt','右 tt','左 f0','右 f0','左 f1','右 f1','左 k0','右 k0','左 k1','右 k1','左 c0','右 c0','左 c1','右 c1','cb','ct'] };
+const WIZ_BASE={ L:['左 f0','左 f1','左 k0','左 k1','左 tt','左 fm','cc','cb','ct','h0','h1','左 c0','左 c1','左 rim'], R:['右 f0','右 f1','右 k0','右 k1','右 tt','右 fm','cc','cb','ct','h0','h1','右 c0','右 c1','右 rim'], C:['cc','h0','h1','左 tt','右 tt','左 f0','右 f0','左 f1','右 f1','左 k0','右 k0','左 k1','右 k1','左 c0','右 c0','左 c1','右 c1','cb','ct'] };
 function wizOrder(phase){ return (WIZ_BASE[phase]||[]).filter(id=>LM[id]); }
 const WIZ_NAME={L:'左コート',R:'右コート',C:'コート全体（中央）'};
 const wizActive=w=>!!w&&(w.phase==='L'||w.phase==='R'||w.phase==='C');
@@ -1165,15 +1165,16 @@ function fitCourtFromAnchors(){ const cs=P().calibs.filter(c=>Object.keys(c.pts)
   const ct=courtSettings(); const keep={W:C.W,keyL:C.keyL,threeR:C.threeR}; const three=C.three; const is3P=id=>/ (tt|t0|t1)$/.test(id);
   // residual of the anchors under the current C, using only the given landmark ids; trimmed mean (worst 15% ignored) so one misplaced point cannot steer the estimate
   const evalModel=(filter)=>{ courtDerived(); LANDMARKS=buildLandmarks(); LM=Object.fromEntries(LANDMARKS.map(l=>[l.id,l])); const errs=[]; for(const c of cs){ const ids=Object.keys(c.pts).filter(id=>LM[id]&&filter(id)); if(ids.length<4) continue; const src=ids.map(id=>c.pts[id]), dst=ids.map(id=>[LM[id].x,LM[id].y]); const H=computeHomography(src,dst); if(!H) continue; for(let i=0;i<ids.length;i++){ const q=applyH(H,src[i][0],src[i][1]); if(!q||q[2]<=0){ errs.push(5); continue; } errs.push(Math.hypot(q[0]-dst[i][0],q[1]-dst[i][1])); } } if(errs.length<8) return Infinity; errs.sort((x,y)=>x-y); const keepN=Math.max(6,Math.round(errs.length*0.85)); let t=0; for(let i=0;i<keepN;i++) t+=errs[i]; return t/keepN; };
-  // stage 1: width and free-throw distance from everything except the 3P line
-  let best=null; for(let W=11;W<=15.01;W+=0.5) for(let k=4.8;k<=6.61;k+=0.2){ C.W=W; C.keyL=+k.toFixed(1); const e=evalModel(id=>!is3P(id)); if(!best||e<best.e) best={e,W,keyL:+k.toFixed(1),R:keep.threeR}; }
+  // stage 1: width and free-throw distance from everything except the 3P line; the length too when circle points (cb/ct) fix the scale
+  const keepL=C.L; const hasCircle=cs.some(c=>c.pts['cb']||c.pts['ct']); const Ls=hasCircle?[22,23,24,25,26,27,28]:[C.L];
+  let best=null; for(const L of Ls) for(let W=11;W<=15.01;W+=0.5) for(let k=4.8;k<=6.61;k+=0.2){ C.L=L; C.W=W; C.keyL=+k.toFixed(1); const e=evalModel(id=>!is3P(id)); if(!best||e<best.e) best={e,L,W,keyL:+k.toFixed(1),R:keep.threeR}; }
   // stage 2: 3P radius from the arc points, with the stage-1 shape fixed
-  if(best&&isFinite(best.e)&&three){ C.W=best.W; C.keyL=best.keyL; let bR=null; for(const R of [5.75,6.0,6.25,6.5,6.75,6.9]){ C.threeR=R; const e=evalModel(id=>true); if(!bR||e<bR.e) bR={e,R}; } if(bR&&isFinite(bR.e)) best.R=bR.R; }
-  C.W=keep.W; C.keyL=keep.keyL; C.threeR=keep.threeR; courtDerived(); rebuildCourt();
+  if(best&&isFinite(best.e)&&three){ C.L=best.L; C.W=best.W; C.keyL=best.keyL; let bR=null; for(const R of [5.75,6.0,6.25,6.5,6.75,6.9]){ C.threeR=R; const e=evalModel(id=>true); if(!bR||e<bR.e) bR={e,R}; } if(bR&&isFinite(bR.e)) best.R=bR.R; }
+  C.L=keepL; C.W=keep.W; C.keyL=keep.keyL; C.threeR=keep.threeR; courtDerived(); rebuildCourt();
   if(!best||!isFinite(best.e)) return toast('推定できませんでした（点の組み合わせが足りません）',4000);
-  const cur=(()=>{ const e=evalModel(id=>!is3P(id)); C.W=keep.W; C.keyL=keep.keyL; C.threeR=keep.threeR; courtDerived(); rebuildCourt(); return e; })();
-  const msg=`推定: 横 ${best.W} m、エンドライン→FT ${best.keyL} m${three?`、3P半径 ${best.R} m`:''}（点のズレ 平均 ${(best.e*100).toFixed(0)} cm。今の設定では ${(cur*100).toFixed(0)} cm）。縦 ${C.L} m は入力値のままです。`;
-  ask(msg+' この寸法を使いますか？',[{label:'使わない',value:false},{label:'この寸法にする',value:true,primary:true}]).then(ok=>{ if(!ok) return; ct.W=best.W; ct.keyL=best.keyL; if(three) ct.threeR=best.R; ct.preset=ct.preset||'fiba'; applyCourt(true); toast('コート寸法を更新しました。解析結果は再解析すると新しい寸法になります',5000); }); }
+  const cur=(()=>{ const e=evalModel(id=>!is3P(id)); C.L=keepL; C.W=keep.W; C.keyL=keep.keyL; C.threeR=keep.threeR; courtDerived(); rebuildCourt(); return e; })();
+  const msg=`推定: ${hasCircle?`縦 ${best.L} m、`:''}横 ${best.W} m、エンドライン→FT ${best.keyL} m${three?`、3P半径 ${best.R} m`:''}（点のズレ 平均 ${(best.e*100).toFixed(0)} cm。今の設定では ${(cur*100).toFixed(0)} cm）。${hasCircle?'縦はセンターサークルの大きさ（半径1.8m）から推定しました。':`縦 ${C.L} m は入力値のままです（センターサークルの上端・下端を目印に置くと縦も推定できます）。`}`;
+  ask(msg+' この寸法を使いますか？',[{label:'使わない',value:false},{label:'この寸法にする',value:true,primary:true}]).then(ok=>{ if(!ok) return; if(hasCircle) ct.L=best.L; ct.W=best.W; ct.keyL=best.keyL; if(three) ct.threeR=best.R; ct.preset=ct.preset||'fiba'; applyCourt(true); toast('コート寸法を更新しました。解析結果は再解析すると新しい寸法になります',5000); }); }
 $('#courtFitBtn').addEventListener('click',fitCourtFromAnchors);
 function estimateCamZ(){ const W=S.source?S.source.width:1920, Hh=S.source?S.source.height:1080; const cs=P().calibs.filter(c=>c.H); if(!cs.length) return 6; const cam=P().settings.cam; let best=null; for(let z=2.5;z<=12;z+=0.5){ let sum=0,n=0; for(const c of cs){ const f=pinnedFit(c.H,{x:cam.x,y:cam.y,z},W,Hh); if(f){ sum+=f.residualPx; n++; } } if(n&&(!best||sum/n<best.r)) best={z,r:sum/n}; } return best?best.z:6; }
 function renderCam(){ const cam=P().settings.cam; const has=!!(cam&&cam.x!=null); $('#camClearBtn').hidden=!has; $('#camZRow').hidden=!has; $('#camNote').hidden=!has; $('#camBtn').classList.toggle('on',!!S.camMode); if(has){ $('#camZ').value=cam.z; const cs=P().calibs.filter(c=>c.H); const est=cs.map(c=>decomposeH(c.H,S.source?S.source.width:1920,S.source?S.source.height:1080)).filter(Boolean); const txt=est.length?'位置合わせから逆算したカメラ位置: '+est.map(d=>'('+d.C[0].toFixed(1)+', '+d.C[1].toFixed(1)+') 高さ'+d.C[2].toFixed(1)+'m').join(' / '):''; $('#camNote').textContent='カメラ位置 ('+cam.x.toFixed(1)+', '+cam.y.toFixed(1)+') 高さ '+cam.z+'m を固定して、向きとズームだけを推定します。'+txt; } }

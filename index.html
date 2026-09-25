@@ -63,6 +63,10 @@ aside{overflow:auto;border-right:1px solid var(--line);background:var(--panel);p
 .tabs{display:flex;border-bottom:1px solid var(--line);margin:-4px -12px 0;padding:0 8px}
 .tabs button{flex:1;border:0;background:transparent;padding:8px 4px;font-weight:500;color:var(--muted);border-bottom:2px solid transparent;font-family:'Barlow Condensed','Noto Sans JP',sans-serif;font-size:15px;letter-spacing:.04em}
 .tabs button.on{color:var(--ink);border-bottom-color:var(--accent)}
+.lscore{font-weight:700;padding:1px 6px;border-radius:4px}
+.lscore.good{background:#2f9e5b;color:#fff}
+.lscore.so{background:#e8b04a;color:#1c1408}
+.lscore.bad{background:#e0463c;color:#fff}
 .steps{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 2px}
 .steps button{border:1px solid var(--line);background:var(--panel2);border-radius:14px;padding:3px 9px;font-size:12px;color:var(--muted)}
 .steps button.on{background:var(--accent);border-color:var(--accent);color:#1c1408;font-weight:600}
@@ -317,7 +321,8 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         <div class="field"><label>種類</label><select id="courtPreset" style="width:190px"><option value="fiba">一般（28×15m・3Pあり）</option><option value="mini">ミニバス（3Pなし・FT 4m）</option></select></div>
         <div class="field"><label>縦 × 横 (m)</label><span style="display:flex;gap:4px;align-items:center"><input type="number" id="courtL" min="20" max="30" step="0.5" style="width:62px"> × <input type="number" id="courtW" min="10" max="16" step="0.5" style="width:62px"></span></div>
         <div class="field"><label>エンドライン→FTライン (m)</label><input type="number" id="courtKeyL" min="3" max="7" step="0.1" style="width:62px"></div>
-        <div class="field"><label>3Pラインあり</label><input type="checkbox" id="courtThree"></div>
+        <div class="field"><label>3Pラインあり</label><span style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="courtThree"> 半径 <input type="number" id="courtThreeR" min="4" max="7.5" step="0.05" style="width:62px"> m</span></div>
+        <button class="btn sm" id="courtFitBtn" style="width:100%;margin:4px 0" title="置いた目印の位置関係から、横幅・FTラインまでの距離・3Pの半径を推定します（縦は入力値のまま）">位置合わせの点から寸法を推定</button>
         <p class="note" id="courtNote"></p>
         <p class="note">ミニバスは体育館によって 22〜28 × 12〜15 m。正確な寸法が分からなければ、エンドラインからFTラインまで（ミニバスは 4 m + ボード位置 1.2 m ＝ 5.2 m）と、コートの縦横をメジャーか歩幅で測って入れてください。寸法を変えたら位置合わせは自動で計算し直されますが、解析結果は再解析が必要です。</p>
       </section>
@@ -440,7 +445,7 @@ const confirmAsk=(text)=>ask(text,[{label:'キャンセル',value:false},{label:
 
 // ───────────────────────── court geometry (FIBA, meters)
 const C = { L:28, W:15, rimX:1.575, keyW:4.9, keyL:5.8, ftR:1.8, threeR:6.75, threeSide:0.9, threeStraight:2.99, ccR:1.8, raR:1.25, bbX:1.2, bbW:1.8, rimR:0.225, three:true };
-const COURT_PRESETS={ fiba:{label:'一般（28×15m・3Pあり）',L:28,W:15,keyL:5.8,keyW:4.9,three:true,raR:1.25}, mini:{label:'ミニバス（3Pなし・FTライン4m）',L:28,W:15,keyL:5.2,keyW:4.9,three:false,raR:0} };
+const COURT_PRESETS={ fiba:{label:'一般（28×15m・3Pあり）',L:28,W:15,keyL:5.8,keyW:4.9,three:true,threeR:6.75,raR:1.25}, mini:{label:'ミニバス（3Pなし・FTライン4m）',L:28,W:15,keyL:5.2,keyW:4.9,three:false,threeR:6.75,raR:0} };
 function arc(cx,cy,r,a0,a1,n=32){ const p=[]; for(let i=0;i<=n;i++){ const a=a0+(a1-a0)*i/n; p.push([cx+r*Math.cos(a), cy+r*Math.sin(a)]); } return p; }
 function courtPaths(){
   const P=[]; const yc=C.W/2;
@@ -455,8 +460,7 @@ function courtPaths(){
     if(C.three){ const a0=Math.asin((yc-C.threeSide)/C.threeR);
     P.push(M([[0,C.threeSide],[C.threeStraight,C.threeSide], ...arc(C.rimX,yc,C.threeR,-a0,a0,48), [C.threeStraight,C.W-C.threeSide],[0,C.W-C.threeSide]])); }
     if(C.raR>0) P.push(M([[C.bbX,yc-C.raR], ...arc(C.rimX,yc,C.raR,-Math.PI/2,Math.PI/2,20), [C.bbX,yc+C.raR]]));
-    P.push(M(arc(C.rimX,yc,C.rimR,0,Math.PI*2,20)));
-    P.push(M([[C.bbX,yc-C.bbW/2],[C.bbX,yc+C.bbW/2]]));
+    { const rim=M(arc(C.rimX,yc,C.rimR,0,Math.PI*2,20)); rim.noFloor=true; P.push(rim); const bb=M([[C.bbX,yc-C.bbW/2],[C.bbX,yc+C.bbW/2]]); bb.noFloor=true; P.push(bb); }
   }
   return P;
 }
@@ -582,13 +586,15 @@ function calibAt(t){ const cs=P().calibs; if(!cs.length) return null; if(S.liveH
 function captureThumb(c){ const th=frameThumb(); if(th) c.thumb=th; S.viewCache=null; }
 function recomputeCalib(c){
   const ids=Object.keys(c.pts); const src=[],dst=[];
-  for(const id of ids){ const l=LM[id]; if(!l) continue; src.push(c.pts[id]); dst.push([l.x,l.y]); }
+  const used=[]; for(const id of ids){ const l=LM[id]; if(!l) continue; src.push(c.pts[id]); dst.push([l.x,l.y]); used.push(id); }
   c.H = src.length>=4 ? computeHomography(src,dst) : null;
   c.Hi = c.H ? mat3inv(c.H) : null;
   c.errs={}; c.bad={};
   if(c.H){ // reprojection error in normalized image units, per point
-    let e=0; const list=[]; ids.forEach((id,i)=>{ if(!LM[id]) return; const q=applyH(c.Hi,dst[i][0],dst[i][1]); const d=q?Math.hypot(q[0]-src[i][0],q[1]-src[i][1]):1; c.errs[id]=d; list.push(d); e+=d; }); c.err=e/src.length;
+    let e=0; const list=[]; used.forEach((id,i)=>{ const q=applyH(c.Hi,dst[i][0],dst[i][1]); const d=q?Math.hypot(q[0]-src[i][0],q[1]-src[i][1]):1; c.errs[id]=d; list.push(d); e+=d; }); c.err=e/src.length;
     if(list.length>=5){ const med=list.slice().sort((a,b)=>a-b)[Math.floor(list.length/2)]; for(const id in c.errs) if(c.errs[id]>Math.max(0.012,2.5*med)) c.bad[id]=true; }
+    // refit without the outliers (they still show in red so the user can fix them), as long as enough good points remain
+    for(let pass=0;pass<2;pass++){ const good=ids.filter(id=>LM[id]&&!c.bad[id]); if(good.length<Math.max(4,ids.length-3)||good.length===src.length) break; const s2=good.map(id=>c.pts[id]), d2=good.map(id=>[LM[id].x,LM[id].y]); const H2=computeHomography(s2,d2); if(!H2) break; const Hi2=mat3inv(H2); if(!Hi2) break; c.H=H2; c.Hi=Hi2; let e2=0; const l2=[]; ids.forEach(id=>{ const l=LM[id]; if(!l) return; const q=applyH(Hi2,l.x,l.y); const d=q?Math.hypot(q[0]-c.pts[id][0],q[1]-c.pts[id][1]):1; c.errs[id]=d; if(!c.bad[id]){ l2.push(d); e2+=d; } }); c.err=l2.length?e2/l2.length:c.err; const med2=l2.slice().sort((a,b)=>a-b)[Math.floor(l2.length/2)]; let changed=false; for(const id in c.errs){ const bad=c.errs[id]>Math.max(0.012,2.5*med2); if(bad!==!!c.bad[id]){ changed=true; } if(bad) c.bad[id]=true; else delete c.bad[id]; } if(!changed) break; }
   } else c.err=null;
 }
 function imgToCourt(u,v,t){ const c=calibAt(t); if(!c||!c.H) return null; const r=applyH(c.H,u,v); return r?[r[0],r[1]]:null; }
@@ -1066,10 +1072,13 @@ const lmSel=$('#lmSel'); fillLmSel();
 lmSel.addEventListener('change',()=>{ S.lm=lmSel.value||null; renderCalibList(); });
 S.lm=null; S.ptOrder=[];
 function nearestLandmark(x,y,r=1.1){ let best=null,bd=r; for(const l of LANDMARKS){ const d=Math.hypot(l.x-x,l.y-y); if(d<bd){bd=d;best=l.id;} } return best; }
+const lineScoreCache={};
+function calibLineScore(c){ if(!c||!c.H||!S.source||S.source.kind==='youtube') return null; if(Math.abs(now()-c.t)>0.25) return lineScoreCache[c.id]||null; const key=c.id+':'+Object.keys(c.pts).length+':'+Object.keys(c.pts).map(k=>c.pts[k].map(v=>v.toFixed(3)).join(',')).join('|'); const hit=lineScoreCache[c.id]; if(hit&&hit.key===key) return hit; let sc=null; try{ const el=S.source.el; const map=whitenessMap(el); const rf=refineToLines(el,c.H,{map,radii:[6,4]}); sc=rf?{key,score:rf.matched/Math.max(1,rf.total),matched:rf.matched,total:rf.total}:{key,score:0,matched:0,total:0}; }catch(e){ return null; } lineScoreCache[c.id]=sc; return sc; }
+function lineScoreText(c){ const ls=calibLineScore(c); if(!ls) return ''; const pct=Math.round(ls.score*100); const lvl=pct>=35?'good':pct>=20?'so':'bad'; const msg=lvl==='good'?'線とよく合っています':lvl==='so'?'まずまず。赤い点があれば直してください':'線と合っていません。点の場所（どの線のどの角か）を見直してください'; return `<span class="lscore ${lvl}">線との一致 ${pct}%</span> <span class="hint">${msg}</span>`; }
 function renderCalibList(){
   const c=calibAt(now()); const host=$('#calibList'); host.innerHTML=''; lmSel.value=S.lm||'';
   const n=c?Object.keys(c.pts).length:0;
-  const badN=c?Object.keys(c.bad||{}).length:0;
+  const badN=c?Object.keys(c.bad||{}).length:0; if(c&&c.H&&Object.keys(c.pts).length>=4){ const lt=lineScoreText(c); if(lt){ const d=document.createElement('div'); d.className='note'; d.innerHTML=lt; host.appendChild(d); } }
   const scanInfo = (S.scan&&S.scan.Hs&&S.scan.Hs.length) ? ' 自動解析済みの区間では、ここで置いた位置合わせを起点にカメラの動きを追跡した結果が使われます。' : '';
   $('#calibNote').textContent = !c||n<4 ? `① ボードで点をクリック → ② 動画の同じ場所をクリック（現在 ${n} 点、4点以上で完了）。半面しか映っていなければボードの片側だけを使ってください。` : !c.H ? 'この組み合わせでは計算できません。同じ直線上（例: ベースライン上だけ）の点では決まらないので、FTラインの端や3Pアークの頂点など奥行きの違う点を追加してください。' : badN ? `赤い点（${badN}個）が他と合っていません。動画上でドラッグして直すか、一覧の×で削除してください。` : c.err>0.02 ? `ずれが大きめです（誤差 ${(c.err*100).toFixed(1)}%）。緑の線が合っていなければ、点を置き直してください。` : `位置合わせ済み（${n}点、時刻 ${fmt(c.t)} から有効、誤差 ${(c.err*100).toFixed(2)}%）。ずれていれば点をドラッグして直せます。`+scanInfo;
   if(!c){ $('#goTrackBtn').hidden=true; renderWizard(); return; }
@@ -1085,7 +1094,7 @@ function renderCalibList(){
   renderWizard();
 }
 // ---- calibration wizard: left court → confirm → (move time) → right court → confirm
-const WIZ_BASE={ L:['左 f0','左 f1','左 k0','左 k1','左 tt','左 fm','cc','h0','h1','左 t0','左 t1','左 c0','左 c1','左 rim'], R:['右 f0','右 f1','右 k0','右 k1','右 tt','右 fm','cc','h0','h1','右 t0','右 t1','右 c0','右 c1','右 rim'], C:['cc','h0','h1','左 tt','右 tt','左 f0','右 f0','左 f1','右 f1','左 k0','右 k0','左 k1','右 k1','左 c0','右 c0','左 c1','右 c1','cb','ct'] };
+const WIZ_BASE={ L:['左 f0','左 f1','左 k0','左 k1','左 tt','左 fm','cc','h0','h1','左 c0','左 c1','左 rim'], R:['右 f0','右 f1','右 k0','右 k1','右 tt','右 fm','cc','h0','h1','右 c0','右 c1','右 rim'], C:['cc','h0','h1','左 tt','右 tt','左 f0','右 f0','左 f1','右 f1','左 k0','右 k0','左 k1','右 k1','左 c0','右 c0','左 c1','右 c1','cb','ct'] };
 function wizOrder(phase){ return (WIZ_BASE[phase]||[]).filter(id=>LM[id]); }
 const WIZ_NAME={L:'左コート',R:'右コート',C:'コート全体（中央）'};
 const wizActive=w=>!!w&&(w.phase==='L'||w.phase==='R'||w.phase==='C');
@@ -1114,7 +1123,7 @@ function renderWizard(){
   const btns=$('#wizBtns'); btns.innerHTML='';
   const mk=(label,fn,go)=>{ const b=document.createElement('button'); b.className='btn sm'+(go?' go':''); b.textContent=label; b.addEventListener('click',fn); btns.appendChild(b); };
   if(wizActive(w)){
-    $('#wizTitle').textContent=(w.phase==='L'?'① ':w.phase==='R'?'② ':'＋ ')+WIZ_NAME[w.phase]; $('#wizProg').textContent=`${n}点${ok?' ✓':' / 4点以上'}`;
+    $('#wizTitle').textContent=(w.phase==='L'?'① ':w.phase==='R'?'② ':'＋ ')+WIZ_NAME[w.phase]; $('#wizProg').textContent=`${n}点${ok?' ✓':' / 4点以上'}`; { const lt=ok?lineScoreText(c):''; let el=$('#wizScore'); if(!el){ el=document.createElement('div'); el.id='wizScore'; el.className='note'; $('#wizCur').insertAdjacentElement('afterend',el); } el.innerHTML=lt; el.hidden=!lt; }
     $('#wizCur').textContent = S.lm ? `次の点: 「${LM[S.lm].name}」 → 動画でクリック` : (ok ? '点を置き終えました。緑の線が合っていれば確定してください。' : '候補の点を使い切りました。ボードで別の点をクリックするか、時刻を変えてやり直してください。');
     if(S.lm) mk('映っていない → 次へ (N)',wizSkip);
     mk(WIZ_NAME[w.phase]+'を確定',wizConfirm,ok);
@@ -1150,7 +1159,22 @@ function mirrorAll(){
 }
 $('#mirrorBtn').addEventListener('click',mirrorAll); $('#skipFloat').addEventListener('click',wizSkip);
 $('#courtPreset').addEventListener('change',e=>{ const pr=COURT_PRESETS[e.target.value]||COURT_PRESETS.fiba; P().settings.court={preset:e.target.value,...pr}; applyCourt(true); toast(`コートを「${pr.label}」にしました`+(S.scan?'。解析結果は再解析すると新しい寸法になります':''),5000); });
-for(const id of ['courtL','courtW','courtKeyL','courtThree']) $('#'+id).addEventListener('change',()=>{ const ct=courtSettings(); ct.L=+$('#courtL').value||ct.L; ct.W=+$('#courtW').value||ct.W; ct.keyL=+$('#courtKeyL').value||ct.keyL; ct.three=$('#courtThree').checked; applyCourt(true); });
+for(const id of ['courtL','courtW','courtKeyL','courtThree','courtThreeR']) $('#'+id).addEventListener('change',()=>{ const ct=courtSettings(); ct.L=+$('#courtL').value||ct.L; ct.W=+$('#courtW').value||ct.W; ct.keyL=+$('#courtKeyL').value||ct.keyL; ct.three=$('#courtThree').checked; ct.threeR=+$('#courtThreeR').value||ct.threeR; applyCourt(true); });
+// estimate the court shape (width, FT distance, 3P radius) from the placed landmarks; the length stays as entered
+function fitCourtFromAnchors(){ const cs=P().calibs.filter(c=>Object.keys(c.pts).length>=5); if(!cs.length) return toast('5点以上置いた位置合わせが必要です',4000);
+  const ct=courtSettings(); const keep={W:C.W,keyL:C.keyL,threeR:C.threeR}; const three=C.three; const is3P=id=>/ (tt|t0|t1)$/.test(id);
+  // residual of the anchors under the current C, using only the given landmark ids; trimmed mean (worst 15% ignored) so one misplaced point cannot steer the estimate
+  const evalModel=(filter)=>{ courtDerived(); LANDMARKS=buildLandmarks(); LM=Object.fromEntries(LANDMARKS.map(l=>[l.id,l])); const errs=[]; for(const c of cs){ const ids=Object.keys(c.pts).filter(id=>LM[id]&&filter(id)); if(ids.length<4) continue; const src=ids.map(id=>c.pts[id]), dst=ids.map(id=>[LM[id].x,LM[id].y]); const H=computeHomography(src,dst); if(!H) continue; for(let i=0;i<ids.length;i++){ const q=applyH(H,src[i][0],src[i][1]); if(!q||q[2]<=0){ errs.push(5); continue; } errs.push(Math.hypot(q[0]-dst[i][0],q[1]-dst[i][1])); } } if(errs.length<8) return Infinity; errs.sort((x,y)=>x-y); const keepN=Math.max(6,Math.round(errs.length*0.85)); let t=0; for(let i=0;i<keepN;i++) t+=errs[i]; return t/keepN; };
+  // stage 1: width and free-throw distance from everything except the 3P line
+  let best=null; for(let W=11;W<=15.01;W+=0.5) for(let k=4.8;k<=6.61;k+=0.2){ C.W=W; C.keyL=+k.toFixed(1); const e=evalModel(id=>!is3P(id)); if(!best||e<best.e) best={e,W,keyL:+k.toFixed(1),R:keep.threeR}; }
+  // stage 2: 3P radius from the arc points, with the stage-1 shape fixed
+  if(best&&isFinite(best.e)&&three){ C.W=best.W; C.keyL=best.keyL; let bR=null; for(const R of [5.75,6.0,6.25,6.5,6.75,6.9]){ C.threeR=R; const e=evalModel(id=>true); if(!bR||e<bR.e) bR={e,R}; } if(bR&&isFinite(bR.e)) best.R=bR.R; }
+  C.W=keep.W; C.keyL=keep.keyL; C.threeR=keep.threeR; courtDerived(); rebuildCourt();
+  if(!best||!isFinite(best.e)) return toast('推定できませんでした（点の組み合わせが足りません）',4000);
+  const cur=(()=>{ const e=evalModel(id=>!is3P(id)); C.W=keep.W; C.keyL=keep.keyL; C.threeR=keep.threeR; courtDerived(); rebuildCourt(); return e; })();
+  const msg=`推定: 横 ${best.W} m、エンドライン→FT ${best.keyL} m${three?`、3P半径 ${best.R} m`:''}（点のズレ 平均 ${(best.e*100).toFixed(0)} cm。今の設定では ${(cur*100).toFixed(0)} cm）。縦 ${C.L} m は入力値のままです。`;
+  ask(msg+' この寸法を使いますか？',[{label:'使わない',value:false},{label:'この寸法にする',value:true,primary:true}]).then(ok=>{ if(!ok) return; ct.W=best.W; ct.keyL=best.keyL; if(three) ct.threeR=best.R; ct.preset=ct.preset||'fiba'; applyCourt(true); toast('コート寸法を更新しました。解析結果は再解析すると新しい寸法になります',5000); }); }
+$('#courtFitBtn').addEventListener('click',fitCourtFromAnchors);
 function estimateCamZ(){ const W=S.source?S.source.width:1920, Hh=S.source?S.source.height:1080; const cs=P().calibs.filter(c=>c.H); if(!cs.length) return 6; const cam=P().settings.cam; let best=null; for(let z=2.5;z<=12;z+=0.5){ let sum=0,n=0; for(const c of cs){ const f=pinnedFit(c.H,{x:cam.x,y:cam.y,z},W,Hh); if(f){ sum+=f.residualPx; n++; } } if(n&&(!best||sum/n<best.r)) best={z,r:sum/n}; } return best?best.z:6; }
 function renderCam(){ const cam=P().settings.cam; const has=!!(cam&&cam.x!=null); $('#camClearBtn').hidden=!has; $('#camZRow').hidden=!has; $('#camNote').hidden=!has; $('#camBtn').classList.toggle('on',!!S.camMode); if(has){ $('#camZ').value=cam.z; const cs=P().calibs.filter(c=>c.H); const est=cs.map(c=>decomposeH(c.H,S.source?S.source.width:1920,S.source?S.source.height:1080)).filter(Boolean); const txt=est.length?'位置合わせから逆算したカメラ位置: '+est.map(d=>'('+d.C[0].toFixed(1)+', '+d.C[1].toFixed(1)+') 高さ'+d.C[2].toFixed(1)+'m').join(' / '):''; $('#camNote').textContent='カメラ位置 ('+cam.x.toFixed(1)+', '+cam.y.toFixed(1)+') 高さ '+cam.z+'m を固定して、向きとズームだけを推定します。'+txt; } }
 $('#camBtn').addEventListener('click',()=>{ S.camMode=!S.camMode; renderCam(); if(S.camMode) toast('ボード上でカメラのある場所をクリックしてください（コートの外でも構いません。観客席側なら下側の外）',5000); });
@@ -1241,9 +1265,10 @@ $('#undoBtn').addEventListener('click',undoDraw);
 $('#clearDrawBtn').addEventListener('click',()=>{ if(!P().strokes.length) return; S.undo.push(P().strokes.slice()); P().strokes=[]; scheduleSave(); });
 
 // ───────────────────────── settings
+function courtDerived(){ const yc=C.W/2; C.threeStraight=C.rimX+Math.sqrt(Math.max(0,C.threeR*C.threeR-(yc-C.threeSide)**2)); }
 function courtSettings(){ const st=P().settings; if(!st.court) st.court={preset:'fiba',...COURT_PRESETS.fiba}; return st.court; }
-function applyCourt(save){ const ct=courtSettings(); const pr=COURT_PRESETS[ct.preset]||COURT_PRESETS.fiba; C.L=+ct.L||pr.L; C.W=+ct.W||pr.W; C.keyL=+ct.keyL||pr.keyL; C.keyW=+ct.keyW||pr.keyW; C.three=ct.three!=null?!!ct.three:pr.three; C.raR=pr.raR; rebuildCourt(); fillLmSel(); for(const c of P().calibs) recomputeCalib(c); S.viewCache=null; if(typeof boardGeom==='function') boardGeom(); renderCourtUI(); if(save){ scheduleSave(); } }
-function renderCourtUI(){ const ct=courtSettings(); if(!$('#courtPreset')) return; $('#courtPreset').value=ct.preset||'fiba'; $('#courtL').value=C.L; $('#courtW').value=C.W; $('#courtKeyL').value=C.keyL; $('#courtThree').checked=!!C.three; $('#courtNote').textContent=`コート ${C.L}×${C.W} m、エンドラインからFTラインまで ${C.keyL} m、3Pライン${C.three?'あり':'なし'}。ボードの線と目印はこの寸法で描かれます。`; }
+function applyCourt(save){ const ct=courtSettings(); const pr=COURT_PRESETS[ct.preset]||COURT_PRESETS.fiba; C.L=+ct.L||pr.L; C.W=+ct.W||pr.W; C.keyL=+ct.keyL||pr.keyL; C.keyW=+ct.keyW||pr.keyW; C.three=ct.three!=null?!!ct.three:pr.three; C.threeR=+ct.threeR||pr.threeR||6.75; C.raR=pr.raR; courtDerived(); rebuildCourt(); fillLmSel(); for(const c of P().calibs) recomputeCalib(c); S.viewCache=null; if(typeof boardGeom==='function') boardGeom(); renderCourtUI(); if(save){ scheduleSave(); } }
+function renderCourtUI(){ const ct=courtSettings(); if(!$('#courtPreset')) return; $('#courtPreset').value=ct.preset||'fiba'; $('#courtL').value=C.L; $('#courtW').value=C.W; $('#courtKeyL').value=C.keyL; $('#courtThree').checked=!!C.three; $('#courtThreeR').value=C.threeR; $('#courtThreeR').disabled=!C.three; $('#courtNote').textContent=`コート ${C.L}×${C.W} m、エンドラインからFTラインまで ${C.keyL} m、3Pライン${C.three?`あり（半径 ${C.threeR} m）`:'なし'}。ボードの線と目印はこの寸法で描かれます。`; }
 function fillLmSel(){ const sel=$('#lmSel'); if(!sel) return; const cur=sel.value; sel.innerHTML=''; const o=document.createElement('option'); o.value=''; o.textContent='（ボードで点をクリック）'; sel.appendChild(o); LANDMARKS.forEach(l=>{ const op=document.createElement('option'); op.value=l.id; op.textContent=l.name; sel.appendChild(op); }); sel.value=LM[cur]?cur:''; }
 function applySettingsUI(){ const st=P().settings; applyCourt(false); renderSeg(); if($('#camBtn')) renderCam(); $('#maxGap').value=st.maxGap; $('#stepSec').value=st.step; $('#split1').value=st.split1; $('#split2').value=st.split2; $('#trails').checked=st.trails; $('#division').value=st.division; $('#offense').value=st.offense; $('#showProj').checked=st.showProj;
   $('#offense').options[0].textContent='OF: '+P().teams.A.name; $('#offense').options[1].textContent='OF: '+P().teams.B.name; }
@@ -1397,21 +1422,22 @@ function dist2(a,b){ let d=0; for(let i=0;i<a.length;i++) d+=(a[i]-b[i])**2; ret
 let jsfeatReady=null; function loadJsfeat(){ if(window.jsfeat) return Promise.resolve(); if(!jsfeatReady) jsfeatReady=loadFirst(['vendor/jsfeat-min.js','https://cdnjs.cloudflare.com/ajax/libs/jsfeat/0.0.8/jsfeat-min.js']).catch(e=>{ jsfeatReady=null; throw new Error('カメラ追跡ライブラリを読み込めませんでした'); }); return jsfeatReady; }
 const mul9=(a,b)=>{ const r=new Array(9).fill(0); for(let i=0;i<3;i++)for(let j=0;j<3;j++)for(let k=0;k<3;k++) r[i*3+j]+=a[i*3+k]*b[k*3+j]; return r; };
 // ---------- Snap a homography to the painted white court lines (court model → image), coarse to fine.
-const RFW=960, RFH=540; const rfCv=document.createElement('canvas'); rfCv.width=RFW; rfCv.height=RFH; const rfG=rfCv.getContext('2d',{willReadFrequently:true});
+let RFW=960, RFH=540, RF_SCALE=1; const rfCv=document.createElement('canvas'); rfCv.width=RFW; rfCv.height=RFH;
+function ensureRF(){ const sw=S.source?S.source.width:0, sh=S.source?S.source.height:0; if(!sw||!sh) return; const w=Math.min(1920,sw), h=Math.round(w*sh/sw); if(w!==RFW||h!==RFH){ RFW=w; RFH=h; RF_SCALE=RFW/960; rfCv.width=RFW; rfCv.height=RFH; rfMap=null; } } const rfG=rfCv.getContext('2d',{willReadFrequently:true});
 let rfMap=null; // Float32Array whiteness 0..1
 let rfGray=null, rfInt=null;
 function whitenessMap(el){
-  rfG.drawImage(el,0,0,RFW,RFH); const d=rfG.getImageData(0,0,RFW,RFH).data; const N=RFW*RFH;
+  ensureRF(); rfG.drawImage(el,0,0,RFW,RFH); const d=rfG.getImageData(0,0,RFW,RFH).data; const N=RFW*RFH;
   if(!rfMap||rfMap.length!==N){ rfMap=new Float32Array(N); rfGray=new Float32Array(N); rfInt=new Float64Array((RFW+1)*(RFH+1)); }
   const grey=new Float32Array(N);
-  for(let i=0;i<N;i++){ const r=d[i*4],g=d[i*4+1],b=d[i*4+2]; const mn=Math.min(r,g,b), mx=Math.max(r,g,b); rfGray[i]=(r+g+b)/3; grey[i]=clamp((60-(mx-mn))/35,0,1); }
+  for(let i=0;i<N;i++){ const r=d[i*4],g=d[i*4+1],b=d[i*4+2]; const mn=Math.min(r,g,b), mx=Math.max(r,g,b); rfGray[i]=(r+g+b)/3; grey[i]=clamp((72-(mx-mn))/40,0,1); }
   // integral image for a fast box blur (local background)
   const IW=RFW+1; for(let y=1;y<=RFH;y++){ let row=0; for(let x=1;x<=RFW;x++){ row+=rfGray[(y-1)*RFW+(x-1)]; rfInt[y*IW+x]=rfInt[(y-1)*IW+x]+row; } }
-  const R=6; const area=(2*R+1)*(2*R+1);
-  for(let y=0;y<RFH;y++){ const y0=Math.max(0,y-R), y1=Math.min(RFH,y+R+1); for(let x=0;x<RFW;x++){ const x0=Math.max(0,x-R), x1=Math.min(RFW,x+R+1); const sum=rfInt[y1*IW+x1]-rfInt[y0*IW+x1]-rfInt[y1*IW+x0]+rfInt[y0*IW+x0]; const mean=sum/((y1-y0)*(x1-x0)); const i=y*RFW+x; const tophat=rfGray[i]-mean; rfMap[i]=clamp((tophat-10)/35,0,1)*clamp((rfGray[i]-120)/60,0,1)*grey[i]; } }
+  const R=Math.round(6*RF_SCALE); const area=(2*R+1)*(2*R+1);
+  for(let y=0;y<RFH;y++){ const y0=Math.max(0,y-R), y1=Math.min(RFH,y+R+1); for(let x=0;x<RFW;x++){ const x0=Math.max(0,x-R), x1=Math.min(RFW,x+R+1); const sum=rfInt[y1*IW+x1]-rfInt[y0*IW+x1]-rfInt[y1*IW+x0]+rfInt[y0*IW+x0]; const mean=sum/((y1-y0)*(x1-x0)); const i=y*RFW+x; const tophat=rfGray[i]-mean; rfMap[i]=clamp((tophat-7)/28,0,1)*clamp((rfGray[i]-100)/60,0,1)*grey[i]; } }
   return rfMap;
 }
-function buildRF(){ const out=[]; const paths=COURT_PATHS.filter(p=>p.length>2||Math.hypot(p[1][0]-p[0][0],p[1][1]-p[0][1])>1.0); for(const path of paths){ for(let i=0;i<path.length-1;i++){ const a=path[i],b=path[i+1]; const L=Math.hypot(b[0]-a[0],b[1]-a[1]); if(L<0.05) continue; const n=Math.max(1,Math.round(L/0.3)); const tx=(b[0]-a[0])/L, ty=(b[1]-a[1])/L; for(let k=0;k<n;k++){ const u=(k+0.5)/n; out.push({x:a[0]+(b[0]-a[0])*u,y:a[1]+(b[1]-a[1])*u,tx,ty}); } } } return out; }
+function buildRF(){ const out=[]; const paths=COURT_PATHS.filter(p=>!p.noFloor&&(p.length>2||Math.hypot(p[1][0]-p[0][0],p[1][1]-p[0][1])>1.0)); for(const path of paths){ for(let i=0;i<path.length-1;i++){ const a=path[i],b=path[i+1]; const L=Math.hypot(b[0]-a[0],b[1]-a[1]); if(L<0.05) continue; const n=Math.max(1,Math.round(L/0.3)); const tx=(b[0]-a[0])/L, ty=(b[1]-a[1])/L; for(let k=0;k<n;k++){ const u=(k+0.5)/n; out.push({x:a[0]+(b[0]-a[0])*u,y:a[1]+(b[1]-a[1])*u,tx,ty}); } } } return out; }
 let RF_SAMPLES=buildRF();
 function ransacH(src,dst,thrPx,iters){ // src: court points, dst: normalized image points → returns H (court ← image)
   const n=src.length; if(n<8) return null; let bestC2I=null,bestIn=[];
@@ -1430,11 +1456,11 @@ function recaptureToLines(el,H,map){
 }
 // H: court ← normalized image. Returns {H, inliers, total, score} or null when the lines cannot be trusted.
 function refineToLines(el,H,opts={}){
-  const map=opts.map||whitenessMap(el); let cur=H; let result=null; const radii=opts.radii||[18,10,5];
-  const passes=[]; for(const R of radii){ passes.push(R); if(R<=12) passes.push(R); }
+  const map=opts.map||whitenessMap(el); let cur=H; let result=null; const radii=(opts.radii||[18,10,5]).map(r=>Math.max(2,Math.round(r*RF_SCALE)));
+  const passes=[]; for(const R of radii){ passes.push(R); if(R<=12*RF_SCALE) passes.push(R); }
   for(const R of passes){ const Hi=mat3inv(cur); if(!Hi) return result; const src=[],dst=[]; let total=0;
     for(const sp of RF_SAMPLES){ const q=applyH(Hi,sp.x,sp.y); if(!q||q[2]<=0) continue; const px=q[0]*RFW, py=q[1]*RFH; if(px<2||py<2||px>RFW-3||py>RFH-3) continue; const q2=applyH(Hi,sp.x+sp.tx*0.3,sp.y+sp.ty*0.3); if(!q2||q2[2]<=0) continue; let dx=q2[0]*RFW-px, dy=q2[1]*RFH-py; const L=Math.hypot(dx,dy)||1; dx/=L; dy/=L; const nx=-dy, ny=dx; total++;
-      let bestV=0.45, bestO=null; for(let o=-R;o<=R;o++){ const x=Math.round(px+nx*o), y=Math.round(py+ny*o); if(x<0||y<0||x>=RFW||y>=RFH) continue; const v=map[y*RFW+x]-0.012*Math.abs(o); if(v>bestV){ bestV=v; bestO=o; } }
+      let bestV=0.45, bestO=null; for(let o=-R;o<=R;o++){ const x=Math.round(px+nx*o), y=Math.round(py+ny*o); if(x<0||y<0||x>=RFW||y>=RFH) continue; const v=map[y*RFW+x]-0.012*Math.abs(o)/RF_SCALE; if(v>bestV){ bestV=v; bestO=o; } }
       if(bestO===null) continue; src.push([sp.x,sp.y]); dst.push([(px+nx*bestO)/RFW,(py+ny*bestO)/RFH]); }
     if(src.length<12) return result; const r=ransacH(src,dst,Math.max(2.5,R*0.35),120); if(!r) return result; cur=r.H;
     const cam=camFixed(); if(cam&&S.source){ const pf=pinnedFitPts(cur,cam,r.idx.map(j=>src[j]),r.idx.map(j=>dst[j]),S.source.width,S.source.height); if(pf&&pf.rmsPx<Math.max(6,R*0.6)){ cur=pf.H; result={H:cur,inliers:r.inliers,total,matched:src.length,score:r.inliers/Math.max(1,total),pinned:true,rmsPx:pf.rmsPx}; continue; } }
@@ -1561,7 +1587,7 @@ async function runScanInner(a,b){
       if(!saneH(Ht) || jump>0.35 || sideBad){ insaneSteps++; let fixed=false; if(ct-lastReloc>=0.4){ lastReloc=ct; const rl=tracker.relocalize(allAnchors()); if(rl){ const H2=tracker.H(); if(H2&&saneH(H2)&&camSideOK(H2)){ Ht=H2; fixed=true; relocs++; } } }
         if(!fixed){ try{ tracker.restore(snap); }catch(e){} S.liveInl=-1; lostFrames++; continue; } }
       prevCentre=courtCentreImg(Ht); }
-    if(useLines && ct-lastRefine>=0.1-1e-6){ lastRefine=ct; try{ const map=whitenessMap(el); let rf=refineToLines(el,Ht,{map,radii:[14,8,4]}); let shift=rf?hShiftPx(Ht,rf.H):Infinity; let accept = rf && rf.inliers>=35 && rf.score>=0.28 && shift<12 && camSideOK(rf.H);
+    if(useLines && ct-lastRefine>=0.1-1e-6){ lastRefine=ct; try{ const map=whitenessMap(el); let rf=refineToLines(el,Ht,{map,radii:[14,8,4]}); let shift=rf?hShiftPx(Ht,rf.H):Infinity; let accept = rf && rf.inliers>=35 && rf.score>=0.28 && shift<12*RF_SCALE && camSideOK(rf.H);
         if(!accept && ct-lastSnapOk>0.8 && ct-lastRecap>=0.5){ lastRecap=ct; const rc=recaptureToLines(el,Ht,map); if(rc && rc.inliers>=40 && rc.score>=0.33 && camSideOK(rc.H)){ rf=rc; accept=true; recaptures++; } else if(rc&&!camSideOK(rc.H)) sideFlips++; }
         if(!accept && ct-lastSnapOk>1.0 && ct-lastReloc>=1.0){ lastReloc=ct; const rl=tracker.relocalize(allAnchors()); if(rl){ const H2=tracker.H(); const rr=H2?refineToLines(el,H2,{map,radii:[20,12,6]}):null; if(rr && rr.inliers>=35 && rr.score>=0.3 && camSideOK(rr.H)){ rf=rr; accept=true; relocs++; } else if(H2&&camSideOK(H2)){ Ht=H2; relocsWeak++; } else if(H2){ sideFlips++; try{ tracker.restore(snap); }catch(e){} } } }
         if(accept){ tracker.rebase(rf.H); Ht=rf.H; refineOk++; lastSnapOk=ct; S.liveRefine=rf;

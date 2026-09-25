@@ -63,6 +63,11 @@ aside{overflow:auto;border-right:1px solid var(--line);background:var(--panel);p
 .tabs{display:flex;border-bottom:1px solid var(--line);margin:-4px -12px 0;padding:0 8px}
 .tabs button{flex:1;border:0;background:transparent;padding:8px 4px;font-weight:500;color:var(--muted);border-bottom:2px solid transparent;font-family:'Barlow Condensed','Noto Sans JP',sans-serif;font-size:15px;letter-spacing:.04em}
 .tabs button.on{color:var(--ink);border-bottom-color:var(--accent)}
+.steps{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 2px}
+.steps button{border:1px solid var(--line);background:var(--panel2);border-radius:14px;padding:3px 9px;font-size:12px;color:var(--muted)}
+.steps button.on{background:var(--accent);border-color:var(--accent);color:#1c1408;font-weight:600}
+#tabTrack:not(.step-all) section[data-step]{display:none}
+#tabTrack.step-court section[data-step=court],#tabTrack.step-analyze section[data-step=analyze],#tabTrack.step-roster section[data-step=roster],#tabTrack.step-train section[data-step=train],#tabTrack.step-settings section[data-step=settings]{display:block}
 #tabStats{display:flex;flex-direction:column;gap:14px}
 .evgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
 .evgrid .btn{padding:7px 2px;text-align:center;font-family:'Barlow Condensed','Noto Sans JP',sans-serif;font-size:14px;font-weight:600;letter-spacing:.02em}
@@ -143,6 +148,8 @@ aside h3 .hint{margin-left:auto;letter-spacing:0;text-transform:none;font-size:1
 .stage-h{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap;min-height:38px}
 .stage-h .ttl{font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:16px;letter-spacing:.04em;margin-right:6px}
 .viewport{flex:1;position:relative;min-height:0;background:var(--stage);overflow:hidden}
+#skipFloat{position:absolute;left:12px;top:44px;z-index:6;background:#e8b04a;color:#1c1408;font-weight:700;border-color:#c9922e;box-shadow:0 2px 8px rgba(0,0,0,.35);padding:8px 12px}
+#skipFloat .kbd{margin-left:4px}
 .viewport video,.viewport canvas.media{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;display:block}
 .viewport canvas.ov{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
 .viewport .empty{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#a9adb7;text-align:center;padding:20px}
@@ -240,12 +247,13 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
           <div class="actions" style="margin-top:6px"><button class="btn sm" id="csvBtn">CSV書き出し</button><button class="btn sm danger" id="clearEvBtn">全削除</button></div>
         </section>
       </div>
-      <div id="tabTrack" style="display:contents">
-      <section>
+      <div id="tabTrack" style="display:contents" class="step-court">
+      <div class="steps" id="stepTabs"><button data-step="court">1 位置合わせ</button><button data-step="analyze">2 解析</button><button data-step="roster">3 名簿・コマ</button><button data-step="train">教師データ</button><button data-step="settings">設定</button><button data-step="all">すべて</button></div>
+      <section data-step="analyze">
         <h3>ボードにする範囲 <span class="hint">1回の攻撃 10〜20秒が目安</span></h3>
         <div class="actions"><button class="btn sm" id="seg15Btn" title="今の位置から15秒間を作業範囲にする">ここから15秒</button><button class="btn sm" id="segStartBtn">ここから</button><button class="btn sm" id="segEndBtn">ここまで</button><span class="seglbl" id="segLabel">未設定</span><button class="btn sm" id="segClearBtn" hidden>解除</button></div>
       </section>
-      <section>
+      <section data-step="analyze">
         <h3>AI自動解析 <span class="hint">手元の動画ファイルのみ</span></h3>
         <div class="actions"><button class="btn" id="autoAllBtn" style="font-weight:600">動画全体を自動解析</button><button class="btn sm" id="scanBtn">範囲だけ解析</button><button class="btn sm" id="stopScanBtn" hidden>停止</button></div>
         <div class="field" style="margin-top:6px"><label>人物検出の間隔</label><select id="scanDt" style="width:84px"><option value="0.25">0.25秒</option><option value="0.5" selected>0.5秒</option><option value="1">1秒</option></select></div>
@@ -265,12 +273,12 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
           <p class="note">背番号を付けるには、名簿で選手を選んでからボードの自動コマ（または動画の枠）をクリックします。追跡が途切れた先は、その時刻でもう一度クリックすると続きが入ります。</p>
         </div>
       </section>
-      <section>
+      <section data-step="roster">
         <h3>PC解析（SAM 2）用の手がかり <span class="hint">動画をクリックして印を付ける</span></h3>
         <div class="actions"><button class="btn sm" id="promptModeBtn">手がかりを付ける</button><button class="btn sm" id="promptUndoBtn">最後の手がかりを削除</button><span class="seglbl" id="promptCount">0件</span></div>
         <p class="note">名簿で選手（またはボール）を選び、動画上でその人をクリックします。各選手とボールに最低1回、見失いやすい場面ではもう一度。付けたら「プロジェクト保存」でJSONに含まれ、PC側のSAM 2追跡がこの印を出発点に全編を追います。</p>
       </section>
-      <section>
+      <section data-step="roster">
         <h3>名簿 <span class="hint">番号をクリックで編集</span></h3>
         <div id="roster"></div>
         <div class="actions">
@@ -281,7 +289,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         <p class="note">動画上で選手の足元をクリック、またはボード上でコマをドラッグすると、その時刻のキーフレーム(KF)が入ります。KF同士の間は自動補間されます。</p>
       </section>
 
-      <section>
+      <section data-step="roster">
         <h3>AI検出アシスト</h3>
         <div class="actions">
           <button class="btn sm" id="detectBtn">この場面の人物を検出</button>
@@ -291,7 +299,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         <p class="note" id="detNote">ブラウザ内の物体検出(COCO-SSD)で人物枠を出します。枠をクリックすると足元がKFになります。自動追跡は枠の連続性で追い、見失うと止まります。</p>
       </section>
 
-      <section id="labSec">
+      <section id="labSec" data-step="train">
         <h3>教師データ作成 <span class="hint">人物・チーム・ボール</span></h3>
         <div class="actions"><button class="btn sm" id="labModeBtn" title="この場面の人物とボールに正解の枠を付けます。保存したデータはチーム判定にすぐ使われ、書き出せばPCでの追加学習に使えます">この場面をラベル付け</button><button class="btn sm go" id="labSaveBtn" hidden>このフレームを保存</button><button class="btn sm" id="labExitBtn" hidden>終了</button></div>
         <div id="labTools" hidden>
@@ -304,7 +312,16 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         <div class="actions"><button class="btn sm" id="labNextBtn" title="15秒先へ移動してラベル付けを続けます">次の場面へ（+15秒）</button><button class="btn sm" id="labExportBtn" title="画像とYOLO形式のラベルをZIPにまとめます（PCでの追加学習用・バックアップ）">教師データを書き出し(ZIP)</button><button class="btn sm" id="labImportBtn" title="書き出したZIPを読み戻します（別のPCやブラウザに移すとき）">読み込み(ZIP)</button><input type="file" id="labImportFile" accept=".zip" hidden><button class="btn sm" id="labReteamBtn" title="保存したラベルの色から、解析結果のチーム判定をやり直します">ラベルでチーム判定をやり直す</button><button class="btn sm" id="labClearAllBtn">全削除</button></div>
       </section>
 
-      <section>
+      <section data-step="court">
+        <h3>コートの寸法</h3>
+        <div class="field"><label>種類</label><select id="courtPreset" style="width:190px"><option value="fiba">一般（28×15m・3Pあり）</option><option value="mini">ミニバス（3Pなし・FT 4m）</option></select></div>
+        <div class="field"><label>縦 × 横 (m)</label><span style="display:flex;gap:4px;align-items:center"><input type="number" id="courtL" min="20" max="30" step="0.5" style="width:62px"> × <input type="number" id="courtW" min="10" max="16" step="0.5" style="width:62px"></span></div>
+        <div class="field"><label>エンドライン→FTライン (m)</label><input type="number" id="courtKeyL" min="3" max="7" step="0.1" style="width:62px"></div>
+        <div class="field"><label>3Pラインあり</label><input type="checkbox" id="courtThree"></div>
+        <p class="note" id="courtNote"></p>
+        <p class="note">ミニバスは体育館によって 22〜28 × 12〜15 m。正確な寸法が分からなければ、エンドラインからFTラインまで（ミニバスは 4 m + ボード位置 1.2 m ＝ 5.2 m）と、コートの縦横をメジャーか歩幅で測って入れてください。寸法を変えたら位置合わせは自動で計算し直されますが、解析結果は再解析が必要です。</p>
+      </section>
+      <section data-step="court">
         <h3>位置合わせ（カメラ補正）</h3>
         <div class="actions">
           <button class="btn sm" id="calibModeBtn">目印を置く</button>
@@ -331,7 +348,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         <p class="note">カメラが動く映像では、カメラの向きごとに「ビュー」を作ります（例: 左コート用・右コート用）。各ビューは作ったときの映像の見え方を覚え、再生中は今の映像に最も似たビューが自動で使われます。</p>
       </section>
 
-      <section>
+      <section data-step="settings">
         <h3>設定</h3>
         <div class="field"><label>KFの空きが何秒超えたら非表示</label><input type="number" id="maxGap" min="0.5" max="30" step="0.5" value="3"></div>
         <div class="field"><label>動画クリック後に進む秒数</label><input type="number" id="stepSec" min="0" max="5" step="0.1" value="1"></div>
@@ -354,6 +371,7 @@ footer.tl canvas{display:block;width:100%;touch-action:none}
         <span class="modeinfo" id="vinfo">動画を開くか、デモ映像で試してください</span>
       </div>
       <div class="viewport" id="viewport">
+        <button class="btn" id="skipFloat" hidden title="この目印が画面に映っていないときに押します（キー N）">映っていない → 次の点へ <span class="kbd">N</span></button>
         <div class="empty" id="emptyMsg"><b>NO VIDEO</b><span>「動画を開く」で手元の試合映像を、<br>「YouTubeを開く」で共有されたURLの動画を読み込めます。<br>まずは「デモ映像で試す」で流れを確認できます。</span></div>
         <canvas class="ov" id="ov"></canvas>
       </div>
@@ -421,7 +439,8 @@ function ask(text, buttons){ return new Promise(res=>{ const m=$('#modal'), bt=$
 const confirmAsk=(text)=>ask(text,[{label:'キャンセル',value:false},{label:'実行する',value:true,primary:true}]);
 
 // ───────────────────────── court geometry (FIBA, meters)
-const C = { L:28, W:15, rimX:1.575, keyW:4.9, keyL:5.8, ftR:1.8, threeR:6.75, threeSide:0.9, threeStraight:2.99, ccR:1.8, raR:1.25, bbX:1.2, bbW:1.8, rimR:0.225 };
+const C = { L:28, W:15, rimX:1.575, keyW:4.9, keyL:5.8, ftR:1.8, threeR:6.75, threeSide:0.9, threeStraight:2.99, ccR:1.8, raR:1.25, bbX:1.2, bbW:1.8, rimR:0.225, three:true };
+const COURT_PRESETS={ fiba:{label:'一般（28×15m・3Pあり）',L:28,W:15,keyL:5.8,keyW:4.9,three:true,raR:1.25}, mini:{label:'ミニバス（3Pなし・FTライン4m）',L:28,W:15,keyL:5.2,keyW:4.9,three:false,raR:0} };
 function arc(cx,cy,r,a0,a1,n=32){ const p=[]; for(let i=0;i<=n;i++){ const a=a0+(a1-a0)*i/n; p.push([cx+r*Math.cos(a), cy+r*Math.sin(a)]); } return p; }
 function courtPaths(){
   const P=[]; const yc=C.W/2;
@@ -433,16 +452,16 @@ function courtPaths(){
     const kw=C.keyW/2;
     P.push(M([[0,yc-kw],[C.keyL,yc-kw],[C.keyL,yc+kw],[0,yc+kw]]));
     P.push(M(arc(C.keyL,yc,C.ftR,0,Math.PI*2,40)));
-    const a0=Math.asin((yc-C.threeSide)/C.threeR);
-    P.push(M([[0,C.threeSide],[C.threeStraight,C.threeSide], ...arc(C.rimX,yc,C.threeR,-a0,a0,48), [C.threeStraight,C.W-C.threeSide],[0,C.W-C.threeSide]]));
-    P.push(M([[C.bbX,yc-C.raR], ...arc(C.rimX,yc,C.raR,-Math.PI/2,Math.PI/2,20), [C.bbX,yc+C.raR]]));
+    if(C.three){ const a0=Math.asin((yc-C.threeSide)/C.threeR);
+    P.push(M([[0,C.threeSide],[C.threeStraight,C.threeSide], ...arc(C.rimX,yc,C.threeR,-a0,a0,48), [C.threeStraight,C.W-C.threeSide],[0,C.W-C.threeSide]])); }
+    if(C.raR>0) P.push(M([[C.bbX,yc-C.raR], ...arc(C.rimX,yc,C.raR,-Math.PI/2,Math.PI/2,20), [C.bbX,yc+C.raR]]));
     P.push(M(arc(C.rimX,yc,C.rimR,0,Math.PI*2,20)));
     P.push(M([[C.bbX,yc-C.bbW/2],[C.bbX,yc+C.bbW/2]]));
   }
   return P;
 }
-const COURT_PATHS = courtPaths();
-const LANDMARKS = (() => {
+let COURT_PATHS = courtPaths();
+function buildLandmarks(){
   const yc=C.W/2, kw=C.keyW/2, L=[];
   const half = (side, s) => {
     const mx = x => side ? C.L-x : x;
@@ -450,11 +469,11 @@ const LANDMARKS = (() => {
     L.push({id:s+'c1', name:s+'コーナー（上）', x:mx(0), y:C.W});
     L.push({id:s+'f0', name:s+'FTライン端（下）', x:mx(C.keyL), y:yc-kw});
     L.push({id:s+'f1', name:s+'FTライン端（上）', x:mx(C.keyL), y:yc+kw});
-    L.push({id:s+'tt', name:s+'3Pアーク頂点', x:mx(C.rimX+C.threeR), y:yc});
+    if(C.three) L.push({id:s+'tt', name:s+'3Pアーク頂点', x:mx(C.rimX+C.threeR), y:yc});
     L.push({id:s+'k0', name:s+'ペイント角 ベースライン（下）', x:mx(0), y:yc-kw});
     L.push({id:s+'k1', name:s+'ペイント角 ベースライン（上）', x:mx(0), y:yc+kw});
-    L.push({id:s+'t0', name:s+'3Pライン 直線の端（下）', x:mx(C.threeStraight), y:C.threeSide});
-    L.push({id:s+'t1', name:s+'3Pライン 直線の端（上）', x:mx(C.threeStraight), y:C.W-C.threeSide});
+    if(C.three){ L.push({id:s+'t0', name:s+'3Pライン 直線の端（下）', x:mx(C.threeStraight), y:C.threeSide});
+    L.push({id:s+'t1', name:s+'3Pライン 直線の端（上）', x:mx(C.threeStraight), y:C.W-C.threeSide}); }
     L.push({id:s+'fm', name:s+'FTライン中央', x:mx(C.keyL), y:yc});
     L.push({id:s+'rim', name:s+'リング直下', x:mx(C.rimX), y:yc});
   };
@@ -466,8 +485,9 @@ const LANDMARKS = (() => {
   L.push({id:'ct', name:'センターサークル 上端', x:C.L/2, y:yc+C.ccR});
   half(1,'右 ');
   return L;
-})();
-const LM = Object.fromEntries(LANDMARKS.map(l => [l.id,l]));
+}
+let LANDMARKS=buildLandmarks(); let LM=Object.fromEntries(LANDMARKS.map(l => [l.id,l]));
+function rebuildCourt(){ COURT_PATHS=courtPaths(); LANDMARKS=buildLandmarks(); LM=Object.fromEntries(LANDMARKS.map(l=>[l.id,l])); if(typeof buildRF==='function') RF_SAMPLES=buildRF(); if(S.lm&&!LM[S.lm]) S.lm=null; }
 
 // ───────────────────────── homography
 function solveLinear(A,b){
@@ -1042,7 +1062,7 @@ $('#delKfBtn').addEventListener('click',()=>{ if(!S.selected) return; if(removeK
 $('#clearKfBtn').addEventListener('click',async()=>{ if(!S.selected) return; const e=entity(S.selected); if(!e.kfs.length) return; if(!(await confirmAsk('選択中のキーフレームをすべて削除しますか？'))) return; e.kfs=[]; scheduleSave(); renderRoster(); });
 
 // ───────────────────────── calibration UI
-const lmSel=$('#lmSel'); { const o=document.createElement('option'); o.value=''; o.textContent='（ボードで点をクリック）'; lmSel.appendChild(o); } LANDMARKS.forEach(l=>{ const o=document.createElement('option'); o.value=l.id; o.textContent=l.name; lmSel.appendChild(o); });
+const lmSel=$('#lmSel'); fillLmSel();
 lmSel.addEventListener('change',()=>{ S.lm=lmSel.value||null; renderCalibList(); });
 S.lm=null; S.ptOrder=[];
 function nearestLandmark(x,y,r=1.1){ let best=null,bd=r; for(const l of LANDMARKS){ const d=Math.hypot(l.x-x,l.y-y); if(d<bd){bd=d;best=l.id;} } return best; }
@@ -1065,13 +1085,13 @@ function renderCalibList(){
   renderWizard();
 }
 // ---- calibration wizard: left court → confirm → (move time) → right court → confirm
-const WIZ_ORDER={ L:['左 c0','左 c1','左 f0','左 f1','左 tt','左 k0','左 k1','左 t0','左 t1','左 fm','左 rim','cc','h0','h1'], R:['右 c0','右 c1','右 f0','右 f1','右 tt','右 k0','右 k1','右 t0','右 t1','右 fm','右 rim','cc','h0','h1'] };
+const WIZ_BASE={ L:['左 f0','左 f1','左 k0','左 k1','左 tt','左 fm','cc','h0','h1','左 t0','左 t1','左 c0','左 c1','左 rim'], R:['右 f0','右 f1','右 k0','右 k1','右 tt','右 fm','cc','h0','h1','右 t0','右 t1','右 c0','右 c1','右 rim'], C:['cc','h0','h1','左 tt','右 tt','左 f0','右 f0','左 f1','右 f1','左 k0','右 k0','左 k1','右 k1','左 c0','右 c0','左 c1','右 c1','cb','ct'] };
+function wizOrder(phase){ return (WIZ_BASE[phase]||[]).filter(id=>LM[id]); }
 const WIZ_NAME={L:'左コート',R:'右コート',C:'コート全体（中央）'};
-WIZ_ORDER.C=['cc','h0','h1','左 tt','右 tt','左 f0','右 f0','左 f1','右 f1','左 c0','右 c0','左 c1','右 c1','左 k0','右 k0','左 k1','右 k1','cb','ct'];
 const wizActive=w=>!!w&&(w.phase==='L'||w.phase==='R'||w.phase==='C');
 S.wiz=null;
 const wizCalib=()=>S.wiz?P().calibs.find(k=>k.id===S.wiz.calibId):null;
-function wizNext(after){ const c=wizCalib(); if(!c) return; const order=WIZ_ORDER[S.wiz.phase]||[]; const start=after?order.indexOf(after)+1:0; for(let i=0;i<order.length;i++){ const id=order[(start+i)%order.length]; if(!c.pts[id]&&!S.wiz.skipped[id]){ S.lm=id; return; } } S.lm=null; }
+function wizNext(after){ const c=wizCalib(); if(!c) return; const order=wizOrder(S.wiz.phase); const start=after?order.indexOf(after)+1:0; for(let i=0;i<order.length;i++){ const id=order[(start+i)%order.length]; if(!c.pts[id]&&!S.wiz.skipped[id]){ S.lm=id; return; } } S.lm=null; }
 function wizStart(phase,calib){ S.wiz={phase,calibId:calib.id,skipped:{}}; wizNext(); setVMode('calib'); renderCalibList(); }
 function wizSkip(){ if(!S.wiz||!S.lm) return; S.wiz.skipped[S.lm]=true; const cur=S.lm; wizNext(cur); renderCalibList(); }
 function snapCalib(c,radii){ if(!S.source||S.source.kind==='youtube'||!c||!c.H) return null; try{ const rf=refineToLines(S.source.el,c.H,{radii:radii||[30,20,12,6,4]}); if(!rf||rf.inliers<40||rf.score<0.28) return rf||null; const shift=hShiftPx(c.H,rf.H); if(!(shift<60)) return {...rf,rejected:true}; const Hi=mat3inv(rf.H); if(!Hi) return null; const backup=JSON.parse(JSON.stringify(c.pts)); for(const id in c.pts){ const l=LM[id]; const q=applyH(Hi,l.x,l.y); if(q&&q[2]>0) c.pts[id]=[q[0],q[1]]; } recomputeCalib(c); if(!c.H||c.err>0.02){ c.pts=backup; recomputeCalib(c); return {...rf,rejected:true}; } c.snapped=true; scheduleSave(); return rf; }catch(e){ console.warn(e); return null; } }
@@ -1088,14 +1108,15 @@ function renderViews(cur){
     d.appendChild(cv); const lab=document.createElement('div'); lab.innerHTML=`ビュー${i+1} ${side}<br>${n}点${c===cur?' <b>使用中</b>':''}${c.thumb?'':'<br><span style="color:var(--warn)">見え方 未記録</span>'}`; d.appendChild(lab); host.appendChild(d); });
 }
 function renderWizard(){
-  const box=$('#wizBox'); const w=S.wiz; if(!w||w.phase==='done'||S.vmode!=='calib'){ box.hidden=true; return; }
+  const box=$('#wizBox'); const w=S.wiz; const sf=$('#skipFloat'); if(sf){ const show=!!(w&&wizActive(w)&&S.vmode==='calib'&&S.lm); sf.hidden=!show; if(show) sf.innerHTML=`「${LM[S.lm].name}」は映っていない → 次の点へ <span class="kbd">N</span>`; }
+  if(!w||w.phase==='done'||S.vmode!=='calib'){ box.hidden=true; return; }
   const c=wizCalib(); if(!c){ box.hidden=true; return; } box.hidden=false; const n=Object.keys(c.pts).length; const ok=c.H&&n>=4;
   const btns=$('#wizBtns'); btns.innerHTML='';
   const mk=(label,fn,go)=>{ const b=document.createElement('button'); b.className='btn sm'+(go?' go':''); b.textContent=label; b.addEventListener('click',fn); btns.appendChild(b); };
   if(wizActive(w)){
     $('#wizTitle').textContent=(w.phase==='L'?'① ':w.phase==='R'?'② ':'＋ ')+WIZ_NAME[w.phase]; $('#wizProg').textContent=`${n}点${ok?' ✓':' / 4点以上'}`;
     $('#wizCur').textContent = S.lm ? `次の点: 「${LM[S.lm].name}」 → 動画でクリック` : (ok ? '点を置き終えました。緑の線が合っていれば確定してください。' : '候補の点を使い切りました。ボードで別の点をクリックするか、時刻を変えてやり直してください。');
-    if(S.lm) mk('この点は映っていない（スキップ）',wizSkip);
+    if(S.lm) mk('映っていない → 次へ (N)',wizSkip);
     mk(WIZ_NAME[w.phase]+'を確定',wizConfirm,ok);
     if(n) mk('点を全消去してやり直す',wizReset);
   } else if(w.phase==='Ldone'){
@@ -1127,7 +1148,9 @@ function mirrorAll(){
   const sc=S.scan; if(sc){ for(const id in sc.tracks) for(const pt of sc.tracks[id].pts) pt.x=C.L-pt.x; for(const o of (sc.ball||[])) o.x=C.L-o.x; for(const fr of sc.frames) for(const d of fr.dets) if(d.x!=null) d.x=C.L-d.x; for(const h of (sc.Hs||[])){ if(h.H){ h.H=mat3mul(MX,h.H); h.Hi=null; } } saveScan(); }
   S.viewCache=null; S.viewLast=null; scheduleSave(); renderCalibList(); renderRoster(); toast('ボードの左右を反転しました（位置合わせ・解析結果・コマすべて）',4000);
 }
-$('#mirrorBtn').addEventListener('click',mirrorAll);
+$('#mirrorBtn').addEventListener('click',mirrorAll); $('#skipFloat').addEventListener('click',wizSkip);
+$('#courtPreset').addEventListener('change',e=>{ const pr=COURT_PRESETS[e.target.value]||COURT_PRESETS.fiba; P().settings.court={preset:e.target.value,...pr}; applyCourt(true); toast(`コートを「${pr.label}」にしました`+(S.scan?'。解析結果は再解析すると新しい寸法になります':''),5000); });
+for(const id of ['courtL','courtW','courtKeyL','courtThree']) $('#'+id).addEventListener('change',()=>{ const ct=courtSettings(); ct.L=+$('#courtL').value||ct.L; ct.W=+$('#courtW').value||ct.W; ct.keyL=+$('#courtKeyL').value||ct.keyL; ct.three=$('#courtThree').checked; applyCourt(true); });
 function estimateCamZ(){ const W=S.source?S.source.width:1920, Hh=S.source?S.source.height:1080; const cs=P().calibs.filter(c=>c.H); if(!cs.length) return 6; const cam=P().settings.cam; let best=null; for(let z=2.5;z<=12;z+=0.5){ let sum=0,n=0; for(const c of cs){ const f=pinnedFit(c.H,{x:cam.x,y:cam.y,z},W,Hh); if(f){ sum+=f.residualPx; n++; } } if(n&&(!best||sum/n<best.r)) best={z,r:sum/n}; } return best?best.z:6; }
 function renderCam(){ const cam=P().settings.cam; const has=!!(cam&&cam.x!=null); $('#camClearBtn').hidden=!has; $('#camZRow').hidden=!has; $('#camNote').hidden=!has; $('#camBtn').classList.toggle('on',!!S.camMode); if(has){ $('#camZ').value=cam.z; const cs=P().calibs.filter(c=>c.H); const est=cs.map(c=>decomposeH(c.H,S.source?S.source.width:1920,S.source?S.source.height:1080)).filter(Boolean); const txt=est.length?'位置合わせから逆算したカメラ位置: '+est.map(d=>'('+d.C[0].toFixed(1)+', '+d.C[1].toFixed(1)+') 高さ'+d.C[2].toFixed(1)+'m').join(' / '):''; $('#camNote').textContent='カメラ位置 ('+cam.x.toFixed(1)+', '+cam.y.toFixed(1)+') 高さ '+cam.z+'m を固定して、向きとズームだけを推定します。'+txt; } }
 $('#camBtn').addEventListener('click',()=>{ S.camMode=!S.camMode; renderCam(); if(S.camMode) toast('ボード上でカメラのある場所をクリックしてください（コートの外でも構いません。観客席側なら下側の外）',5000); });
@@ -1218,7 +1241,11 @@ $('#undoBtn').addEventListener('click',undoDraw);
 $('#clearDrawBtn').addEventListener('click',()=>{ if(!P().strokes.length) return; S.undo.push(P().strokes.slice()); P().strokes=[]; scheduleSave(); });
 
 // ───────────────────────── settings
-function applySettingsUI(){ const st=P().settings; renderSeg(); if($('#camBtn')) renderCam(); $('#maxGap').value=st.maxGap; $('#stepSec').value=st.step; $('#split1').value=st.split1; $('#split2').value=st.split2; $('#trails').checked=st.trails; $('#division').value=st.division; $('#offense').value=st.offense; $('#showProj').checked=st.showProj;
+function courtSettings(){ const st=P().settings; if(!st.court) st.court={preset:'fiba',...COURT_PRESETS.fiba}; return st.court; }
+function applyCourt(save){ const ct=courtSettings(); const pr=COURT_PRESETS[ct.preset]||COURT_PRESETS.fiba; C.L=+ct.L||pr.L; C.W=+ct.W||pr.W; C.keyL=+ct.keyL||pr.keyL; C.keyW=+ct.keyW||pr.keyW; C.three=ct.three!=null?!!ct.three:pr.three; C.raR=pr.raR; rebuildCourt(); fillLmSel(); for(const c of P().calibs) recomputeCalib(c); S.viewCache=null; if(typeof boardGeom==='function') boardGeom(); renderCourtUI(); if(save){ scheduleSave(); } }
+function renderCourtUI(){ const ct=courtSettings(); if(!$('#courtPreset')) return; $('#courtPreset').value=ct.preset||'fiba'; $('#courtL').value=C.L; $('#courtW').value=C.W; $('#courtKeyL').value=C.keyL; $('#courtThree').checked=!!C.three; $('#courtNote').textContent=`コート ${C.L}×${C.W} m、エンドラインからFTラインまで ${C.keyL} m、3Pライン${C.three?'あり':'なし'}。ボードの線と目印はこの寸法で描かれます。`; }
+function fillLmSel(){ const sel=$('#lmSel'); if(!sel) return; const cur=sel.value; sel.innerHTML=''; const o=document.createElement('option'); o.value=''; o.textContent='（ボードで点をクリック）'; sel.appendChild(o); LANDMARKS.forEach(l=>{ const op=document.createElement('option'); op.value=l.id; op.textContent=l.name; sel.appendChild(op); }); sel.value=LM[cur]?cur:''; }
+function applySettingsUI(){ const st=P().settings; applyCourt(false); renderSeg(); if($('#camBtn')) renderCam(); $('#maxGap').value=st.maxGap; $('#stepSec').value=st.step; $('#split1').value=st.split1; $('#split2').value=st.split2; $('#trails').checked=st.trails; $('#division').value=st.division; $('#offense').value=st.offense; $('#showProj').checked=st.showProj;
   $('#offense').options[0].textContent='OF: '+P().teams.A.name; $('#offense').options[1].textContent='OF: '+P().teams.B.name; }
 $('#maxGap').addEventListener('change',e=>{P().settings.maxGap=parseFloat(e.target.value)||3; scheduleSave();});
 $('#stepSec').addEventListener('change',e=>{P().settings.step=parseFloat(e.target.value)||0; scheduleSave();});
@@ -1384,7 +1411,8 @@ function whitenessMap(el){
   for(let y=0;y<RFH;y++){ const y0=Math.max(0,y-R), y1=Math.min(RFH,y+R+1); for(let x=0;x<RFW;x++){ const x0=Math.max(0,x-R), x1=Math.min(RFW,x+R+1); const sum=rfInt[y1*IW+x1]-rfInt[y0*IW+x1]-rfInt[y1*IW+x0]+rfInt[y0*IW+x0]; const mean=sum/((y1-y0)*(x1-x0)); const i=y*RFW+x; const tophat=rfGray[i]-mean; rfMap[i]=clamp((tophat-10)/35,0,1)*clamp((rfGray[i]-120)/60,0,1)*grey[i]; } }
   return rfMap;
 }
-const RF_SAMPLES=(()=>{ const out=[]; const paths=COURT_PATHS.filter(p=>p.length>2||Math.hypot(p[1][0]-p[0][0],p[1][1]-p[0][1])>1.0); for(const path of paths){ for(let i=0;i<path.length-1;i++){ const a=path[i],b=path[i+1]; const L=Math.hypot(b[0]-a[0],b[1]-a[1]); if(L<0.05) continue; const n=Math.max(1,Math.round(L/0.3)); const tx=(b[0]-a[0])/L, ty=(b[1]-a[1])/L; for(let k=0;k<n;k++){ const u=(k+0.5)/n; out.push({x:a[0]+(b[0]-a[0])*u,y:a[1]+(b[1]-a[1])*u,tx,ty}); } } } return out; })();
+function buildRF(){ const out=[]; const paths=COURT_PATHS.filter(p=>p.length>2||Math.hypot(p[1][0]-p[0][0],p[1][1]-p[0][1])>1.0); for(const path of paths){ for(let i=0;i<path.length-1;i++){ const a=path[i],b=path[i+1]; const L=Math.hypot(b[0]-a[0],b[1]-a[1]); if(L<0.05) continue; const n=Math.max(1,Math.round(L/0.3)); const tx=(b[0]-a[0])/L, ty=(b[1]-a[1])/L; for(let k=0;k<n;k++){ const u=(k+0.5)/n; out.push({x:a[0]+(b[0]-a[0])*u,y:a[1]+(b[1]-a[1])*u,tx,ty}); } } } return out; }
+let RF_SAMPLES=buildRF();
 function ransacH(src,dst,thrPx,iters){ // src: court points, dst: normalized image points → returns H (court ← image)
   const n=src.length; if(n<8) return null; let bestC2I=null,bestIn=[];
   for(let it=0;it<iters;it++){ const pick=[]; while(pick.length<4){ const j=Math.floor(Math.random()*n); if(!pick.includes(j)) pick.push(j); } const C2I=computeHomography(pick.map(j=>src[j]),pick.map(j=>dst[j])); if(!C2I) continue; const inl=[]; for(let j=0;j<n;j++){ const q=applyH(C2I,src[j][0],src[j][1]); if(!q||q[2]<=0) continue; const dx=(q[0]-dst[j][0])*RFW, dy=(q[1]-dst[j][1])*RFH; if(dx*dx+dy*dy<thrPx*thrPx) inl.push(j); } if(inl.length>bestIn.length){ bestIn=inl; bestC2I=C2I; } }
@@ -1729,9 +1757,14 @@ function guideWizard(n){
   if(w.phase==='Ldone') return {n:2,text:'① 左コートは確定しました。まず左コートの場面だけ起こすなら「右コートは後で → 追跡へ進む」で先に進めます。右コートも使うなら、右コートが映っている時刻まで動画を進めて「右の位置合わせスタート」（右コート用のビューになり、カメラが右を向いたときに自動で使われます）。',action:['右コートは後で → 追跡へ進む',()=>{ S.wiz.phase='done'; S.lm=null; setVMode('track'); }]};
   return null;
 }
+const STEP_OF_GUIDE={1:'court',2:'court',3:'analyze',4:'roster',5:'roster',6:'roster'};
+function setStep(step,pin){ const host=$('#tabTrack'); host.className=host.className.replace(/\bstep-\w+/g,'').trim(); host.classList.add('step-'+step); $$('#stepTabs button').forEach(b=>b.classList.toggle('on',b.dataset.step===step)); S.step=step; if(pin!==undefined) S.stepPinned=pin; }
+function stepFollow(n){ const want=STEP_OF_GUIDE[n]||'court'; if(S.stepPinned&&S.stepPinnedN===n) return; S.stepPinned=false; if(S.step!==want) setStep(want); S.stepPinnedN=n; }
+$$('#stepTabs button').forEach(b=>b.addEventListener('click',()=>{ setStep(b.dataset.step,true); S.stepPinnedN=(guideState()||{}).n; }));
+setStep('court');
 function updateGuide(){
   const g=$('#guide'); if(g.hidden) return; const st=guideState(); const key=st.n+'|'+st.text+'|'+(st.action?st.action[0]:'');
-  if(key===guideKey) return; guideKey=key;
+  if(key===guideKey) return; guideKey=key; stepFollow(st.n);
   $('#gStep').textContent='STEP '+st.n+'/'+GUIDE_STEPS; $('#gText').textContent=st.text;
   const a=$('#gAction'); if(st.action){ a.hidden=false; a.textContent=st.action[0]; a.onclick=st.action[1]; } else { a.hidden=true; a.onclick=null; }
   [...$('#gDots').children].forEach((d,i)=>{ d.className=i+1<st.n?'done':i+1===st.n?'cur':''; });
@@ -1742,9 +1775,10 @@ try{ if(localStorage.getItem('courttrace:guide')==='off'){ $('#guide').hidden=tr
 
 // ───────────────────────── keyboard
 document.addEventListener('keydown',e=>{
-  if(e.target.matches('input,select,textarea')) return;
+  if(e.target&&e.target.matches&&e.target.matches('input,select,textarea')) return;
   if(e.key==='Escape'&&S.pendingShot){ S.pendingShot=null; $('#pendMsg').hidden=true; renderStats(); return; }
   if(S.vmode==='label'&&!e.ctrlKey&&!e.metaKey){ const map={'1':'A','2':'B','3':'X','4':'ball','0':'del'}; if(map[e.key]){ labSetCls(map[e.key]); return; } if(e.key==='Enter'){ e.preventDefault(); labSaveFrame(); return; } if(e.key==='Escape'){ labExit(); return; } }
+  if((e.key==='n'||e.key==='N')&&S.vmode==='calib'&&wizActive(S.wiz)&&S.lm){ e.preventDefault(); wizSkip(); return; }
   if(e.code==='Space'){ e.preventDefault(); togglePlay(); }
   else if(e.key==='ArrowLeft'){ e.preventDefault(); seek(now()-(e.shiftKey?1:1/FPS)); }
   else if(e.key==='ArrowRight'){ e.preventDefault(); seek(now()+(e.shiftKey?1:1/FPS)); }
@@ -1766,7 +1800,7 @@ function frame(ts){
 }
 function refreshRosterStatus(){ const t=now(); $$('#roster .prow').forEach((row,i)=>{}); const rows=[...$('#roster').querySelectorAll('.prow:not(.ballrow)')]; const ps=[...P().players.filter(p=>p.team==='A'),...P().players.filter(p=>p.team==='B')]; rows.forEach((row,i)=>{ const p=ps[i]; if(!p) return; const st=row.querySelector('.st'); const pos=playerPos(p,t); const cls=pos?'vis':p.kfs.length?'hid':''; st.className='st '+cls; st.textContent=pos?'表示中':p.kfs.length?'画面外':'未入力'; const cv=coverage(p.kfs); row.querySelector('.kfc').textContent=cv!=null?Math.round(cv*100)+'%':p.kfs.length+'KF'; if(cv!=null){ row.style.background=`linear-gradient(90deg, rgba(58,157,93,.18) ${Math.round(cv*100)}%, transparent ${Math.round(cv*100)}%)`; row.classList.toggle('done',cv>=0.9); } }); const br=$('#roster .ballrow'); if(br){ const bp=ballPos(t); const st=br.querySelector('.st'); st.className='st '+(bp?'vis':P().ball.kfs.length?'hid':''); st.textContent='ボール '+(bp?'':P().ball.kfs.length?'(非表示)':'(未入力)'); br.querySelector('.kfc').textContent=P().ball.kfs.length+'KF'; } }
 renderRoster(); renderCalibList(); applySettingsUI(); setVMode('track'); renderStats();
-if(new URLSearchParams(location.search).has('debug')) window.__ct={get tileStats(){return lastTileStats;},tileGrid,camSideOK,camSideReference,labImport,readZip,loadProjectData,labReteam,labSupervisor,labExport,makeZip,pinnedFitPts,estimateCamZ,decomposeH,composeH,constrainH,pinnedFit,recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,LM,LANDMARKS,C,COURT_PATHS,ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
+if(new URLSearchParams(location.search).has('debug')) window.__ct={get tileStats(){return lastTileStats;},tileGrid,camSideOK,camSideReference,labImport,readZip,loadProjectData,labReteam,labSupervisor,labExport,makeZip,pinnedFitPts,estimateCamZ,decomposeH,composeH,constrainH,pinnedFit,recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,get LM(){return LM;},get LANDMARKS(){return LANDMARKS;},C,get COURT_PATHS(){return COURT_PATHS;},ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
 { const q=new URLSearchParams(location.search).get('src'); if(q){ S.project=newProject(); S.project.name=q.split('/').pop(); mount(new VideoSource(q)); renderRoster(); renderCalibList(); } }
 requestAnimationFrame(frame);
 })();

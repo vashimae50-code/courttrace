@@ -1363,11 +1363,16 @@ function nmsMerge(dets,iou=0.5){ dets.sort((a,b)=>b.score-a.score); const out=[]
 function tileGrid(W,H){ const OV=48, TW=700; const cols=Math.min(8,Math.max(1,Math.ceil((W-OV)/(TW-OV)))), rows=Math.min(6,Math.max(1,Math.ceil((H-OV)/(TW-OV)))); const tw=Math.ceil((W+(cols-1)*OV)/cols), th=Math.ceil((H+(rows-1)*OV)/rows); return {cols,rows,tw,th,n:cols*rows}; }
 function tileTouchesCourt(H,x,y,w,h,W,Hh){ if(!H) return true; const M=(parseFloat($('#courtMargin').value)||0.7)+1.5; for(let j=0;j<=4;j++) for(let i=0;i<=4;i++){ const q=applyH(H,(x+w*i/4)/W,(y+h*j/4)/Hh); if(q&&q[2]>0&&q[0]>-M&&q[0]<C.L+M&&q[1]>-M&&q[1]<C.W+M) return true; } return false; }
 let lastTileStats={n:0,used:0};
+// image-space box that can contain people standing on the court (court outline + margin, extended upwards for bodies)
+function courtImageBox(Hc,W,H){ if(!Hc) return null; const Hi=mat3inv(Hc); if(!Hi) return null; const M=(parseFloat($('#courtMargin').value)||0.7)+1.0; let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9,n=0;
+  for(let i=0;i<=40;i++){ const u=i/40; for(const [x,yv] of [[-M+(C.L+2*M)*u,-M],[-M+(C.L+2*M)*u,C.W+M],[-M,-M+(C.W+2*M)*u],[C.L+M,-M+(C.W+2*M)*u]]){ const q=applyH(Hi,x,yv); if(!q||q[2]<=0) continue; const px=q[0]*W, py=q[1]*H; if(px<-W||px>2*W||py<-H||py>2*H) continue; x0=Math.min(x0,px); y0=Math.min(y0,py); x1=Math.max(x1,px); y1=Math.max(y1,py); n++; } }
+  if(n<8) return null; y0-=(y1-y0)*0.35; const bx=Math.max(0,Math.floor(x0)), by=Math.max(0,Math.floor(y0)); const bw=Math.min(W,Math.ceil(x1))-bx, bh=Math.min(H,Math.ceil(y1))-by; if(bw<240||bh<140) return null; return {x:bx,y:by,w:bw,h:bh}; }
 async function detectFrame(el,W,H,Hc){
   const y=await ensureYolo(); const tiles=[]; const OV=48;
-  if(y.ep==='webgpu'){ const g=tileGrid(W,H); const {cols,rows,tw,th}=g; for(let j=0;j<rows;j++) for(let i=0;i<cols;i++){ const x=cols>1?Math.round(i*(W-tw)/(cols-1)):0, yy=rows>1?Math.round(j*(H-th)/(rows-1)):0; tiles.push([Math.max(0,x),Math.max(0,yy),Math.min(tw,W),Math.min(th,H)]); } }
-  else { const tw=Math.ceil((W+OV)/2); tiles.push([0,0,tw,H],[W-tw,0,tw,H]); }
-  const use=Hc?tiles.filter(t=>tileTouchesCourt(Hc,t[0],t[1],t[2],t[3],W,H)):tiles; lastTileStats={n:tiles.length,used:use.length};
+  const box=courtImageBox(Hc,W,H)||{x:0,y:0,w:W,h:H}; const BW=box.w, BH=box.h;
+  if(y.ep==='webgpu'){ const g=tileGrid(BW,BH); const {cols,rows,tw,th}=g; for(let j=0;j<rows;j++) for(let i=0;i<cols;i++){ const x=cols>1?Math.round(i*(BW-tw)/(cols-1)):0, yy=rows>1?Math.round(j*(BH-th)/(rows-1)):0; tiles.push([box.x+Math.max(0,x),box.y+Math.max(0,yy),Math.min(tw,BW),Math.min(th,BH)]); } }
+  else { const tw=Math.ceil((BW+OV)/2); tiles.push([box.x,box.y,tw,BH],[box.x+BW-tw,box.y,tw,BH]); }
+  const use=Hc?tiles.filter(t=>tileTouchesCourt(Hc,t[0],t[1],t[2],t[3],W,H)):tiles; lastTileStats={n:tiles.length,used:use.length,box};
   let all=[]; for(const t of use) all=all.concat(await yoloInfer(el,...t)); all=nmsMerge(all,0.5);
   const norm=d=>({u:d.x/W,v:d.y/H,w:d.w/W,h:d.h/H,score:d.score});
   return {persons:all.filter(d=>d.cls===0&&d.score>=0.3).map(norm), balls:all.filter(d=>d.cls===32&&d.score>=0.3).map(norm)};
@@ -1427,8 +1432,8 @@ let RFW=960, RFH=540, RF_SCALE=1; const rfCv=document.createElement('canvas'); r
 function ensureRF(){ const sw=S.source?S.source.width:0, sh=S.source?S.source.height:0; if(!sw||!sh) return; const w=Math.min(1920,sw), h=Math.round(w*sh/sw); if(w!==RFW||h!==RFH){ RFW=w; RFH=h; RF_SCALE=RFW/960; rfCv.width=RFW; rfCv.height=RFH; rfMap=null; } } const rfG=rfCv.getContext('2d',{willReadFrequently:true});
 let rfMap=null; // Float32Array whiteness 0..1
 let rfGray=null, rfInt=null;
-function whitenessMap(el){
-  ensureRF(); rfG.drawImage(el,0,0,RFW,RFH); const d=rfG.getImageData(0,0,RFW,RFH).data; const N=RFW*RFH;
+function whitenessMap(el,pre){
+  ensureRF(); let d; if(pre&&pre.width===RFW&&pre.height===RFH) d=pre.data; else { rfG.drawImage(el,0,0,RFW,RFH); d=rfG.getImageData(0,0,RFW,RFH).data; } const N=RFW*RFH;
   if(!rfMap||rfMap.length!==N){ rfMap=new Float32Array(N); rfGray=new Float32Array(N); rfInt=new Float64Array((RFW+1)*(RFH+1)); }
   const grey=new Float32Array(N);
   for(let i=0;i<N;i++){ const r=d[i*4],g=d[i*4+1],b=d[i*4+2]; const mn=Math.min(r,g,b), mx=Math.max(r,g,b); rfGray[i]=(r+g+b)/3; grey[i]=clamp((72-(mx-mn))/40,0,1); }
@@ -1471,7 +1476,7 @@ function refineToLines(el,H,opts={}){
 const CTW=480, CTH=270;
 class CamTracker{
   constructor(el){ this.el=el; this.cv=document.createElement('canvas'); this.cv.width=CTW; this.cv.height=CTH; this.g=this.cv.getContext('2d',{willReadFrequently:true}); this.prev=new jsfeat.pyramid_t(4); this.prev.allocate(CTW,CTH,jsfeat.U8_t|jsfeat.C1_t); this.cur=new jsfeat.pyramid_t(4); this.cur.allocate(CTW,CTH,jsfeat.U8_t|jsfeat.C1_t); this.buf=[]; for(let i=0;i<CTW*CTH;i++) this.buf[i]=new jsfeat.keypoint_t(0,0,0,0); this.kernel=new jsfeat.motion_model.homography2d(); this.rp=new jsfeat.ransac_params_t(4,2.5,0.5,0.99); this.pts=[]; this.A=[1,0,0,0,1,0,0,0,1]; this.anchor=null; }
-  gray(m){ this.g.drawImage(this.el,0,0,CTW,CTH); const d=this.g.getImageData(0,0,CTW,CTH); jsfeat.imgproc.grayscale(d.data,CTW,CTH,m); }
+  gray(m,src){ this.g.drawImage(src||this.el,0,0,CTW,CTH); const d=this.g.getImageData(0,0,CTW,CTH); jsfeat.imgproc.grayscale(d.data,CTW,CTH,m); }
   inPerson(x,y){ const bs=this.personBoxes; if(!bs||!bs.length) return false; const u=x/CTW, v=y/CTH; for(const b of bs){ if(u>=b.u-0.01&&u<=b.u+b.w+0.01&&v>=b.v-0.01&&v<=b.v+b.h+0.02) return true; } return false; }
   small(img){ const W=CTW>>2,H=CTH>>2; const out=new Float32Array(W*H); for(let y=0;y<H;y++) for(let x=0;x<W;x++){ let sum=0; for(let j=0;j<4;j++) for(let i=0;i<4;i++) sum+=img.data[(y*4+j)*CTW+x*4+i]; out[y*W+x]=sum/16; } return out; }
   translation(){ const W=CTW>>2,H=CTH>>2; const a=this.small(this.prev.data[0]), b=this.small(this.cur.data[0]); const R=14, mx0=R+2, my0=R+2, mw=W-2*(R+2), mh=H-2*(R+2); let best=null,bestV=Infinity,second=Infinity; for(let dy=-R;dy<=R;dy++) for(let dx=-R;dx<=R;dx++){ let sad=0; for(let y=my0;y<my0+mh;y+=2){ const ra=y*W, rb=(y+dy)*W+dx; for(let x=mx0;x<mx0+mw;x+=2) sad+=Math.abs(a[ra+x]-b[rb+x]); } if(sad<bestV){ second=bestV; bestV=sad; best={dx,dy}; } else if(sad<second) second=sad; } if(!best||bestV>second*0.97) return null; return {dx:best.dx*4,dy:best.dy*4,conf:second/Math.max(1,bestV)}; }
@@ -1486,7 +1491,7 @@ class CamTracker{
   detect(img){ jsfeat.fast_corners.set_threshold(20); const n=jsfeat.fast_corners.detect(img,this.buf,5); const pts=[]; for(let i=0;i<n;i++){ const c=this.buf[i]; if(c.y<CTH*0.12) continue; if(this.inPerson(c.x,c.y)) continue; pts.push({x:c.x,y:c.y,score:c.score}); } pts.sort((a,b)=>b.score-a.score); const out=[]; for(const p of pts){ if(out.every(q=>Math.hypot(q.x-p.x,q.y-p.y)>10)) out.push({x:p.x,y:p.y}); if(out.length>=250) break; } return out; }
   reset(anchor){ this.anchor=anchor; this.A=[1,0,0,0,1,0,0,0,1]; this.gray(this.prev.data[0]); this.prev.build(this.prev.data[0],true); this.pts=this.detect(this.prev.data[0]); }
   rebase(Hnow){ this.anchor={H:Hnow}; this.A=[1,0,0,0,1,0,0,0,1]; }
-  step(){ this.gray(this.cur.data[0]); this.cur.build(this.cur.data[0],true); const n=this.pts.length; const px=new Float32Array(n*2), cx=new Float32Array(n*2), st=new Uint8Array(n); this.pts.forEach((p,i)=>{px[i*2]=p.x;px[i*2+1]=p.y;}); if(n) jsfeat.optical_flow_lk.track(this.prev,this.cur,px,cx,n,15,30,st,0.01,0.001); const from=[],to=[]; for(let i=0;i<n;i++){ if(!st[i]) continue; from.push({x:px[i*2],y:px[i*2+1]}); to.push({x:cx[i*2],y:cx[i*2+1]}); }
+  step(pre){ if(pre&&pre.data&&pre.data.length===this.cur.data[0].data.length) this.cur.data[0].data.set(pre.data); else this.gray(this.cur.data[0]); this.cur.build(this.cur.data[0],true); const n=this.pts.length; const px=new Float32Array(n*2), cx=new Float32Array(n*2), st=new Uint8Array(n); this.pts.forEach((p,i)=>{px[i*2]=p.x;px[i*2+1]=p.y;}); if(n) jsfeat.optical_flow_lk.track(this.prev,this.cur,px,cx,n,15,30,st,0.01,0.001); const from=[],to=[]; for(let i=0;i<n;i++){ if(!st[i]) continue; from.push({x:px[i*2],y:px[i*2+1]}); to.push({x:cx[i*2],y:cx[i*2+1]}); }
     let ok=false,inl=0; const Hm=new jsfeat.matrix_t(3,3,jsfeat.F32_t|jsfeat.C1_t); const mask=new jsfeat.matrix_t(Math.max(1,from.length),1,jsfeat.U8_t|jsfeat.C1_t); if(from.length>=12){ ok=jsfeat.motion_estimator.ransac(this.rp,this.kernel,from,to,from.length,Hm,mask,600); for(let i=0;i<from.length;i++) inl+=mask.data[i]; }
     this.lastTracked=n?from.length/n:0; { const ds=[]; for(let i=0;i<from.length;i++) if(mask.data[i]) ds.push(Math.hypot(to[i].x-from[i].x,to[i].y-from[i].y)); ds.sort((a,b)=>a-b); this.lastDisp=ds.length?ds[ds.length>>1]:0; }
     if(ok&&inl>=12&&this.lastTracked>=0.5){ this.A=mul9(Array.from(Hm.data),this.A); this.pts=[]; for(let i=0;i<from.length;i++) if(mask.data[i]&&!this.inPerson(to[i].x,to[i].y)) this.pts.push(to[i]); }
@@ -1544,7 +1549,7 @@ function constrainH(Hic,cam,W,Hh){ if(!cam||cam.z==null) return Hic; const fit=p
 function hShiftPx(Ha,Hb){ const A=mat3inv(Ha), B=mat3inv(Hb); if(!A||!B) return Infinity; let n=0,sum=0; for(let i=0;i<RF_SAMPLES.length;i+=4){ const sp=RF_SAMPLES[i]; const p=applyH(A,sp.x,sp.y), q=applyH(B,sp.x,sp.y); if(!p||!q||p[2]<=0||q[2]<=0) continue; if(p[0]<0||p[0]>1||p[1]<0||p[1]>1) continue; sum+=Math.hypot((p[0]-q[0])*RFW,(p[1]-q[1])*RFH); n++; } return n?sum/n:Infinity; }
 function lerpMat(D,u){ return D.map((row,i)=>row.map((v,j)=>I3[i][j]+(v-I3[i][j])*u)); }
 function explainErr(e){ const m=(e&&e.message)||String(e); if(/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'AIモデル（人物検出）のダウンロードに失敗しました。このネットワークでは storage.googleapis.com への接続が遮断されている可能性があります。別のネットワーク（スマホのテザリングなど）で再度お試しください。'; if(/WebGL|shader|texture|GPU/i.test(m)) return 'GPU（WebGL）でエラーが起きました。ブラウザのタブを閉じて開き直すか、他の重いタブを閉じてから再度お試しください。'; if(/jsfeat|カメラ追跡/.test(m)) return 'カメラ追跡ライブラリ（cdnjs.cloudflare.com）を読み込めませんでした。ネットワークをご確認ください。'; return '自動解析でエラーが発生しました。'; }
-async function runScan(a,b){ try{ return await runScanInner(a,b); }catch(e){ console.error(e); stopTracking(); $('#autoAllBtn').disabled=false; $('#scanBtn').disabled=false; const msg=explainErr(e)+'（詳細: '+((e&&e.message)||e)+'）'; $('#scanNote').textContent=msg; toast(msg,9000); } }
+async function runScan(a,b){ if(S.tracking||S.scanBusy){ toast('解析はすでに実行中です。終わるか「停止」を押してから、もう一度実行してください',4000); return; } S.scanBusy=true; try{ return await runScanInner(a,b); }catch(e){ console.error(e); stopTracking(); $('#autoAllBtn').disabled=false; $('#scanBtn').disabled=false; const msg=explainErr(e)+'（詳細: '+((e&&e.message)||e)+'）'; $('#scanNote').textContent=msg; toast(msg,9000); }  finally{ S.scanBusy=false; } }
 async function runScanInner(a,b){
   if(!S.source) return toast('先に動画を開いてください'); if(S.source.kind!=='video') return toast(S.source.kind==='youtube'?YT_NO_AI:'自動解析は動画ファイルで使えます',6000);
   const anchors=P().calibs.filter(c=>c.H).slice().sort((p,q)=>p.t-q.t);
@@ -1562,8 +1567,8 @@ async function runScanInner(a,b){
   camSideRef=camSideReference(); let sideFlips=0;
   const tracker=new CamTracker(el); let ai=0; for(let i=0;i<anchors.length;i++) if(anchors[i].t<=a+1e-3) ai=i; tracker.reset(anchors[ai]); let segStart=a;
   let lastT=-1, lastDet=-1e9, lastRec=-1e9, detBusy=false, lostFrames=0, frameCount=0, lastRefine=-1e9, refineOk=0, refineMiss=0, lastSnapOk=a, subSteps=0, lastRecap=-1e9, recaptures=0, lastReloc=-1e9, relocs=0, relocsWeak=0, lastKF=-1e9, insaneSteps=0, prevCentre=null; const useLines=$('#useLines').checked; const keyframes=[]; const allAnchors=()=>anchors.concat(keyframes);
-  const ingest=(t,dets,Hc,balls)=>{
-    const M=parseFloat($('#courtMargin').value)||0.7; let kept=[]; for(const d of dets){ const fu=d.u+d.w/2, fv=d.v+d.h; const q=applyH(Hc,fu,fv); if(!q||q[2]<=0) continue; if(q[0]<-M||q[0]>C.L+M||q[1]<-M||q[1]>C.W+M) continue; d.fu=fu; d.fv=fv; d.x=clamp(q[0],-1,C.L+1); d.y=clamp(q[1],-1,C.W+1); d.col=sampleColor(el,d,W,H); kept.push(d); }
+  const ingest=(t,dets,Hc,balls,srcEl)=>{ const sEl=srcEl||el;
+    const M=parseFloat($('#courtMargin').value)||0.7; let kept=[]; for(const d of dets){ const fu=d.u+d.w/2, fv=d.v+d.h; const q=applyH(Hc,fu,fv); if(!q||q[2]<=0) continue; if(q[0]<-M||q[0]>C.L+M||q[1]<-M||q[1]>C.W+M) continue; d.fu=fu; d.fv=fv; d.x=clamp(q[0],-1,C.L+1); d.y=clamp(q[1],-1,C.W+1); d.col=sampleColor(sEl,d,W,H); kept.push(d); }
     if(kept.length>12){ kept.sort((p,q)=>q.score-p.score); kept=kept.slice(0,12); }
     const cand=[]; kept.forEach((d,di)=>{ active.forEach((tr,ti)=>{ const dist=Math.hypot(d.x-tr.x,d.y-tr.y); if(dist<2.2*Math.max(1,dtDet/0.5)) cand.push([dist,di,ti]); }); });
     cand.sort((p,q)=>p[0]-q[0]); const usedD=new Set(), usedT=new Set();
@@ -1575,30 +1580,39 @@ async function runScanInner(a,b){
   };
   // Deterministic frame stepping (seek-based): keeps working when the tab is in the background and on slow machines.
   const stepT=0.1; const seekStep=(t)=>Promise.race([S.source.seekAsync(t), new Promise(r=>setTimeout(r,1500))]);
+  // --- speed-ups: (1) frames where nothing moved skip the camera tracking, (2) detection runs while the next frames are being seeked
+  const T={seek:0,static:0,track:0,map:0,refine:0,detWait:0,sub:0}; let tm=performance.now(); const lap=k=>{ const n=performance.now(); T[k]+=n-tm; tm=n; };
+  const diffImg=new jsfeat.matrix_t(CTW,CTH,jsfeat.U8_t|jsfeat.C1_t); let lastGray=null, staticStreak=0, staticSkips=0, lastFull=-1e9, lastInl=-1, stepNow=stepT;
+  const frameIsStatic=()=>{ try{ tracker.gray(diffImg); const d=diffImg.data; let moved=0; if(lastGray){ for(let i=0;i<d.length;i+=3){ const v=d[i]-lastGray[i]; if(v>14||v<-14) moved++; } } else lastGray=new Uint8Array(d.length); const frac=lastGray?moved*3/d.length:1; lastGray.set(d); return frac<0.035; }catch(e){ return false; } };
+  const detCv=document.createElement('canvas'); detCv.width=W; detCv.height=H; const detG=detCv.getContext('2d'); let pendingDet=null;
+  const flushDet=async()=>{ if(!pendingDet) return; const pd=pendingDet; pendingDet=null; try{ tm=performance.now(); const r=await pd.promise; lap('detWait'); ingest(pd.t,r.persons,pd.H,r.balls,detCv); tracker.personBoxes=r.persons; }catch(e){ console.warn(e); } };
+  const detectIfDue=async(ct,Ht)=>{ if(ct-lastDet<dtDet-1e-6) return; lastDet=ct; await flushDet(); try{ if(which==='yolo'){ detG.drawImage(el,0,0,W,H); pendingDet={t:ct,H:Ht,promise:detectFrame(detCv,W,H,Ht)}; } else { const r=await detector.detect(el,80,0.3).then(res=>({persons:res.filter(x=>x.class==='person').map(x=>({u:x.bbox[0]/W,v:x.bbox[1]/H,w:x.bbox[2]/W,h:x.bbox[3]/H,score:x.score})),balls:[]})); ingest(ct,r.persons,Ht,r.balls); tracker.personBoxes=r.persons; } }catch(e){ console.warn(e); } };
+  const progress=async(ct,inl)=>{ if(frameCount%10!==0) return; const done=(ct-a)/(b-a); const el2=(performance.now()-t0)/1000; const eta=done>0.02?Math.round(el2/done-el2):null; $('#scanNote').innerHTML=`<span class="progress">解析中 ${fmt(ct)} / ${fmt(b)}（${Math.round(done*100)}%${eta!=null?'、残り約'+Math.max(1,Math.ceil(eta/60))+'分':''}） 追跡点 ${Math.max(0,inl)} ・ 検出 ${frames.length}回${staticSkips?' ・ 静止スキップ '+staticSkips:''}</span>`; await new Promise(r=>setTimeout(r,0)); };
   { const tmpImg=new jsfeat.matrix_t(CTW,CTH,jsfeat.U8_t|jsfeat.C1_t); for(const an of anchors){ try{ await seekStep(an.t+0.02); tracker.gray(tmpImg); an.orb=tracker.orbOf(tmpImg); }catch(e){ console.warn(e); } } await seekStep(a); tracker.reset(anchors[ai]); }
-  for(let ct=a; ct<=b+1e-6 && !trackAbort; ct=+(ct+stepT).toFixed(3)){
-    const snap=tracker.snapshot(); await seekStep(ct); frameCount++;
+  for(let ct=a; ct<=b+1e-6 && !trackAbort; ct=+(ct+stepNow).toFixed(3)){
+    tm=performance.now(); const snap=tracker.snapshot(); await seekStep(ct); frameCount++; lap('seek');
     while(ai+1<anchors.length && anchors[ai+1].t<=ct+1e-3){ const next=anchors[ai+1]; const Ht=tracker.H(); if(Ht){ const Hi=mat3inv(Ht); if(Hi) segs.push({t0:segStart,t1:next.t,D:mat3mul(next.H,Hi)}); } ai++; tracker.reset(next); segStart=next.t; }
-    let inl=-1; try{ inl=tracker.step(); }catch(e){ console.warn(e); }
-    if(inl<0 || tracker.lastDisp>9 || tracker.lastTracked<0.6){ // fast pan: redo this 0.1 s in 3 sub-steps of one frame each
-      try{ tracker.restore(snap); subSteps++; for(let k=1;k<=3;k++){ await seekStep(+(ct-stepT+stepT*k/3).toFixed(3)); inl=tracker.step(); } }catch(e){ console.warn(e); } }
+    { const isStatic=frameIsStatic(); lap('static'); const Hprev=tracker.H(); if(isStatic && Hprev && ct-lastFull<3.0 && ct-segStart>0.25){ staticStreak++; staticSkips++; stepNow=staticStreak>=3?0.2:stepT; S.liveH={id:'live',t:ct,pts:{},H:Hprev,Hi:mat3inv(Hprev),scan:true,inl:lastInl}; S.liveInl=lastInl; if(ct-lastRec>=0.2-1e-6){ lastRec=ct; Hs.push({t:ct,H:Hprev,inl:lastInl}); } await detectIfDue(ct,Hprev); await progress(ct,lastInl); continue; } staticStreak=0; stepNow=stepT; lastFull=ct; }
+    let inl=-1; try{ inl=tracker.step(diffImg); }catch(e){ console.warn(e); } lap('track');
+    if(inl<0 || tracker.lastDisp>12 || tracker.lastTracked<0.5){ // fast pan: redo this 0.1 s in 3 sub-steps of one frame each
+      try{ tracker.restore(snap); subSteps++; for(let k=1;k<=2;k++){ await seekStep(+(ct-stepT+stepT*k/2).toFixed(3)); inl=tracker.step(); } }catch(e){ console.warn(e); } lap('sub'); }
     if(inl<0) lostFrames++; let Ht=tracker.H(); if(!Ht) continue;
     { const cc=courtCentreImg(Ht); const jump=(cc&&prevCentre)?Math.hypot(cc[0]-prevCentre[0],cc[1]-prevCentre[1]):0;
       const sideBad=!camSideOK(Ht); if(sideBad) sideFlips++;
       if(!saneH(Ht) || jump>0.35 || sideBad){ insaneSteps++; let fixed=false; if(ct-lastReloc>=0.4){ lastReloc=ct; const rl=tracker.relocalize(allAnchors()); if(rl){ const H2=tracker.H(); if(H2&&saneH(H2)&&camSideOK(H2)){ Ht=H2; fixed=true; relocs++; } } }
         if(!fixed){ try{ tracker.restore(snap); }catch(e){} S.liveInl=-1; lostFrames++; continue; } }
       prevCentre=courtCentreImg(Ht); }
-    if(useLines && ct-lastRefine>=0.1-1e-6){ lastRefine=ct; try{ const map=whitenessMap(el); let rf=refineToLines(el,Ht,{map,radii:[14,8,4]}); let shift=rf?hShiftPx(Ht,rf.H):Infinity; let accept = rf && rf.inliers>=35 && rf.score>=0.28 && shift<12*RF_SCALE && camSideOK(rf.H);
+    if(useLines && ct-lastRefine>=0.1-1e-6){ lastRefine=ct; try{ tm=performance.now(); const map=whitenessMap(el); lap('map'); let rf=refineToLines(el,Ht,{map,radii:[14,8,4]}); let shift=rf?hShiftPx(Ht,rf.H):Infinity; let accept = rf && rf.inliers>=35 && rf.score>=0.28 && shift<12*RF_SCALE && camSideOK(rf.H);
         if(!accept && ct-lastSnapOk>0.8 && ct-lastRecap>=0.5){ lastRecap=ct; const rc=recaptureToLines(el,Ht,map); if(rc && rc.inliers>=40 && rc.score>=0.33 && camSideOK(rc.H)){ rf=rc; accept=true; recaptures++; } else if(rc&&!camSideOK(rc.H)) sideFlips++; }
         if(!accept && ct-lastSnapOk>1.0 && ct-lastReloc>=1.0){ lastReloc=ct; const rl=tracker.relocalize(allAnchors()); if(rl){ const H2=tracker.H(); const rr=H2?refineToLines(el,H2,{map,radii:[20,12,6]}):null; if(rr && rr.inliers>=35 && rr.score>=0.3 && camSideOK(rr.H)){ rf=rr; accept=true; relocs++; } else if(H2&&camSideOK(H2)){ Ht=H2; relocsWeak++; } else if(H2){ sideFlips++; try{ tracker.restore(snap); }catch(e){} } } }
         if(accept){ tracker.rebase(rf.H); Ht=rf.H; refineOk++; lastSnapOk=ct; S.liveRefine=rf;
           if(rf.score>=0.42 && rf.inliers>=110 && ct-lastKF>=3 && saneH(rf.H)){ const cc=courtCentreImg(rf.H); const novel=!allAnchors().some(an=>{ const c2=courtCentreImg(an.H); return c2&&Math.hypot(c2[0]-cc[0],c2[1]-cc[1])<0.12; }); if(novel){ try{ keyframes.push({t:ct,H:rf.H,orb:tracker.orbOf(tracker.prev.data[0]),auto:true}); if(keyframes.length>60) keyframes.shift(); lastKF=ct; }catch(e){} } } }
-        else { refineMiss++; S.liveRefine=rf?{...rf,rejected:true}:null; } }catch(e){ console.warn(e); } }
-    S.liveH={id:'live',t:ct,pts:{},H:Ht,Hi:mat3inv(Ht),scan:true,inl}; S.liveInl=inl;
+        else { refineMiss++; S.liveRefine=rf?{...rf,rejected:true}:null; } }catch(e){ console.warn(e); } lap('refine'); }
+    lastInl=inl; S.liveH={id:'live',t:ct,pts:{},H:Ht,Hi:mat3inv(Ht),scan:true,inl}; S.liveInl=inl;
     if(ct-lastRec>=0.2-1e-6){ lastRec=ct; Hs.push({t:ct,H:Ht,inl}); }
-    if(ct-lastDet>=dtDet-1e-6){ lastDet=ct; try{ const r = which==='yolo' ? await detectFrame(el,W,H,Ht) : await detector.detect(el,80,0.3).then(res=>({persons:res.filter(x=>x.class==='person').map(x=>({u:x.bbox[0]/W,v:x.bbox[1]/H,w:x.bbox[2]/W,h:x.bbox[3]/H,score:x.score})),balls:[]})); ingest(ct,r.persons,Ht,r.balls); tracker.personBoxes=r.persons; }catch(e){ console.warn(e); } }
-    if(frameCount%10===0){ const done=(ct-a)/(b-a); const el2=(performance.now()-t0)/1000; const eta=done>0.02?Math.round(el2/done-el2):null; $('#scanNote').innerHTML=`<span class="progress">解析中 ${fmt(ct)} / ${fmt(b)}（${Math.round(done*100)}%${eta!=null?'、残り約'+Math.max(1,Math.ceil(eta/60))+'分':''}） 追跡点 ${Math.max(0,inl)} ・ 検出 ${frames.length}回</span>`; await new Promise(r=>setTimeout(r,0)); }
+    await detectIfDue(ct,Ht); await progress(ct,inl);
   }
+  await flushDet(); window.__scanT=T;
   el.pause(); el.playbackRate=prevRate; el.muted=wasMuted; stopTracking(); S.liveH=null; $('#autoAllBtn').disabled=false; $('#scanBtn').disabled=false;
   // loop-closure: distribute the mismatch found at each anchor back across its segment
   const segErr=[]; for(const sg of segs){ const span=sg.t1-sg.t0||1; const corr=(t)=>lerpMat(sg.D,clamp((t-sg.t0)/span,0,1)); for(const h of Hs){ if(h.t>=sg.t0&&h.t<=sg.t1){ h.H=mat3mul(corr(h.t),h.H); h.Hi=null; } } for(const fr of frames){ if(fr.t<sg.t0||fr.t>sg.t1) continue; const Dm=corr(fr.t); for(const d of fr.dets){ const q=applyH(Dm,d.x,d.y); if(q){ d.x=clamp(q[0],-1,C.L+1); d.y=clamp(q[1],-1,C.W+1); } } } const q=applyH(sg.D,C.L/2,C.W/2); segErr.push({t0:sg.t0,t1:sg.t1,err:q?Math.hypot(q[0]-C.L/2,q[1]-C.W/2):null}); }
@@ -1634,7 +1648,7 @@ async function runScanInner(a,b){
   const badTxt=bad.length?` 追跡が不安定だった時間帯: ${bad.slice(0,8).map(x=>fmt(x.a)+'〜'+fmt(x.b)).join(', ')}${bad.length>8?' ほか':''}（タイムライン上部の赤印。この付近に位置合わせを追加して再解析すると改善します）`:' カメラ追跡は全区間で安定していました。';
   const errTxt=(segErr.length?' アンカー間のズレ補正量: '+segErr.map(e=>`${fmt(e.t0)}〜${fmt(e.t1)} ${e.err!=null?e.err.toFixed(1)+'m':'?'}`).join(' / ')+'（2mを超える区間は途中に位置合わせを足すと改善します）':' アンカーが1つだけなので、ズレは時間とともに積み重なります。カメラが動く映像では1分ごとに位置合わせを追加してください。')+badTxt;
   if(!good.length){ $('#scanNote').textContent='解析は終わりましたが、コート上に人物を検出できませんでした。位置合わせが合っているか（緑の線がコートに重なるか）、映像に選手が十分な大きさで映っているかを確認してください。'; toast('人物を検出できませんでした',5000); renderRoster(); return; }
-  $('#scanNote').textContent=`解析完了（${((performance.now()-t0)/1000/60).toFixed(1)}分、検出 ${which==='yolo'?(yolo&&yolo.url&&yolo.url.includes('10s')?'YOLOv10s':'YOLOv10n'):'COCO-SSD'}、人の動き ${good.length} 本、ボール検出 ${ballKeep.length} 回、カメラ追跡の失敗 ${lostFrames}/${frameCount} フレーム${useLines?`、白線への吸着 成功 ${refineOk} / 失敗 ${refineMiss}`:''}、速い動きの細分化 ${subSteps}回、見失いからの再捕捉 ${recaptures}回、再照合 ${relocs}回、自動キーフレーム ${keyframes.length}枚、不正な推定を棄却 ${insaneSteps}回、左右の取り違えを棄却 ${sideFlips}回）。ボードに自動コマが出ています。チームの色分けが逆なら下で入れ替えてください。`+errTxt;
+  $('#scanNote').textContent=`解析完了（${((performance.now()-t0)/1000/60).toFixed(1)}分、検出 ${which==='yolo'?(yolo&&yolo.url&&yolo.url.includes('10s')?'YOLOv10s':'YOLOv10n'):'COCO-SSD'}、人の動き ${good.length} 本、ボール検出 ${ballKeep.length} 回、カメラ追跡の失敗 ${lostFrames}/${frameCount} フレーム${useLines?`、白線への吸着 成功 ${refineOk} / 失敗 ${refineMiss}`:''}、速い動きの細分化 ${subSteps}回、見失いからの再捕捉 ${recaptures}回、再照合 ${relocs}回、自動キーフレーム ${keyframes.length}枚、不正な推定を棄却 ${insaneSteps}回、左右の取り違えを棄却 ${sideFlips}回、静止区間の省略 ${staticSkips}コマ）。 時間の内訳: コマ送り ${(T.seek/1000).toFixed(0)}秒・追跡 ${((T.track+T.sub)/1000).toFixed(0)}秒・白線 ${((T.map+T.refine)/1000).toFixed(0)}秒・検出待ち ${(T.detWait/1000).toFixed(0)}秒。ボードに自動コマが出ています。チームの色分けが逆なら下で入れ替えてください。`+errTxt;
   toast('自動解析が完了しました。再生するとボードで全員が動きます。',5000); renderRoster();
 }
 $('#autoAllBtn').addEventListener('click',async()=>{ if(!S.source) return toast('先に動画を開いてください'); const d=S.source.duration||0; if(!d) return toast('動画の長さが取れません'); if(S.scan&&!(await confirmAsk('既存の解析結果を置き換えますか？'))) return; runScan(0,d); });
@@ -1827,7 +1841,7 @@ function frame(ts){
 }
 function refreshRosterStatus(){ const t=now(); $$('#roster .prow').forEach((row,i)=>{}); const rows=[...$('#roster').querySelectorAll('.prow:not(.ballrow)')]; const ps=[...P().players.filter(p=>p.team==='A'),...P().players.filter(p=>p.team==='B')]; rows.forEach((row,i)=>{ const p=ps[i]; if(!p) return; const st=row.querySelector('.st'); const pos=playerPos(p,t); const cls=pos?'vis':p.kfs.length?'hid':''; st.className='st '+cls; st.textContent=pos?'表示中':p.kfs.length?'画面外':'未入力'; const cv=coverage(p.kfs); row.querySelector('.kfc').textContent=cv!=null?Math.round(cv*100)+'%':p.kfs.length+'KF'; if(cv!=null){ row.style.background=`linear-gradient(90deg, rgba(58,157,93,.18) ${Math.round(cv*100)}%, transparent ${Math.round(cv*100)}%)`; row.classList.toggle('done',cv>=0.9); } }); const br=$('#roster .ballrow'); if(br){ const bp=ballPos(t); const st=br.querySelector('.st'); st.className='st '+(bp?'vis':P().ball.kfs.length?'hid':''); st.textContent='ボール '+(bp?'':P().ball.kfs.length?'(非表示)':'(未入力)'); br.querySelector('.kfc').textContent=P().ball.kfs.length+'KF'; } }
 renderRoster(); renderCalibList(); applySettingsUI(); setVMode('track'); renderStats();
-if(new URLSearchParams(location.search).has('debug')) window.__ct={get tileStats(){return lastTileStats;},tileGrid,camSideOK,camSideReference,labImport,readZip,loadProjectData,labReteam,labSupervisor,labExport,makeZip,pinnedFitPts,estimateCamZ,decomposeH,composeH,constrainH,pinnedFit,recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,get LM(){return LM;},get LANDMARKS(){return LANDMARKS;},C,get COURT_PATHS(){return COURT_PATHS;},ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
+if(new URLSearchParams(location.search).has('debug')) window.__ct={get scanTiming(){return window.__scanT;},detectFrame,get tileStats(){return lastTileStats;},tileGrid,camSideOK,camSideReference,labImport,readZip,loadProjectData,labReteam,labSupervisor,labExport,makeZip,pinnedFitPts,estimateCamZ,decomposeH,composeH,constrainH,pinnedFit,recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,get LM(){return LM;},get LANDMARKS(){return LANDMARKS;},C,get COURT_PATHS(){return COURT_PATHS;},ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
 { const q=new URLSearchParams(location.search).get('src'); if(q){ S.project=newProject(); S.project.name=q.split('/').pop(); mount(new VideoSource(q)); renderRoster(); renderCalibList(); } }
 requestAnimationFrame(frame);
 })();

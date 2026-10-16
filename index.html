@@ -28,7 +28,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:'Noto Sans JP',s
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer}
 :focus-visible{outline:2px solid var(--focus);outline-offset:1px}
-.app{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;height:100vh}
+.app{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr) auto;height:100vh}
 .guide{display:flex;align-items:center;gap:12px;padding:7px 14px;background:var(--accent-soft);border-bottom:1px solid var(--line);font-size:13px;line-height:1.5}
 .guide .gstep{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:16px;letter-spacing:.05em;color:var(--accent);white-space:nowrap}
 .guide .gtext{flex:1;min-width:0}
@@ -58,7 +58,7 @@ a.btn{text-decoration:none;color:inherit;display:inline-block;cursor:pointer}
 .seg .btn:last-child{border-right:0}
 label.file{position:relative;overflow:hidden}
 label.file input{position:absolute;inset:0;opacity:0;cursor:pointer}
-main{display:grid;grid-template-columns:272px minmax(0,1fr) minmax(0,1fr);min-height:0}
+main{display:grid;grid-template-columns:272px minmax(0,1fr) minmax(0,1fr);min-height:0;min-width:0}
 aside{overflow:auto;border-right:1px solid var(--line);background:var(--panel);padding:10px 12px 24px;display:flex;flex-direction:column;gap:14px}
 .tabs{display:flex;border-bottom:1px solid var(--line);margin:-4px -12px 0;padding:0 8px}
 .tabs button{flex:1;border:0;background:transparent;padding:8px 4px;font-weight:500;color:var(--muted);border-bottom:2px solid transparent;font-family:'Barlow Condensed','Noto Sans JP',sans-serif;font-size:15px;letter-spacing:.04em}
@@ -169,7 +169,7 @@ aside h3 .hint{margin-left:auto;letter-spacing:0;text-transform:none;font-size:1
 .boardwrap .txtin{position:absolute;border:1px solid var(--accent);background:var(--panel);padding:3px 6px;border-radius:4px;font-size:13px;min-width:120px}
 .color{width:22px;height:22px;border-radius:50%;border:2px solid var(--panel);box-shadow:0 0 0 1px var(--line);cursor:pointer;padding:0}
 .color.on{box-shadow:0 0 0 2px var(--ink)}
-footer.tl{border-top:1px solid var(--line);background:var(--panel);grid-column:1/-1}
+footer.tl{border-top:1px solid var(--line);background:var(--panel);grid-column:1/-1;min-width:0;overflow:hidden}
 footer.tl canvas{display:block;width:100%;touch-action:none}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:20}
 .mbox{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:18px 20px;max-width:440px;width:calc(100% - 40px);box-shadow:0 12px 40px rgba(0,0,0,.35)}
@@ -1844,5 +1844,7 @@ renderRoster(); renderCalibList(); applySettingsUI(); setVMode('track'); renderS
 if(new URLSearchParams(location.search).has('debug')) window.__ct={get scanTiming(){return window.__scanT;},detectFrame,get tileStats(){return lastTileStats;},tileGrid,camSideOK,camSideReference,labImport,readZip,loadProjectData,labReteam,labSupervisor,labExport,makeZip,pinnedFitPts,estimateCamZ,decomposeH,composeH,constrainH,pinnedFit,recaptureToLines,refineToLines,whitenessMap,RF_SAMPLES,S,P,calibAt,calibByTime,imgToCourt,courtToImg,recomputeCalib,computeHomography,applyH,mat3inv,mat3mul,get LM(){return LM;},get LANDMARKS(){return LANDMARKS;},C,get COURT_PATHS(){return COURT_PATHS;},ensureDetector,loadJsfeat,detectNow,seek,now,fmt,scheduleSave,renderCalibList,renderRoster,ensureCalib,captureThumb,get detector(){return detector;},get CamTracker(){return CamTracker;},runScan,seg,uid,scanH};
 { const q=new URLSearchParams(location.search).get('src'); if(q){ S.project=newProject(); S.project.name=q.split('/').pop(); mount(new VideoSource(q)); renderRoster(); renderCalibList(); } }
 requestAnimationFrame(frame);
+// ウィンドウ幅が変わったらタイムラインを引き直す（フッターが画面より広いまま残らないように）
+window.addEventListener('resize', ()=>{ try{ drawTimeline(); }catch(e){} });
 })();
 </script>

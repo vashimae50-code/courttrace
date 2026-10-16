@@ -13,7 +13,7 @@ prompts（Webアプリの「手がかり」）があれば、その位置にい�
 import argparse, json, math, sys, time
 import numpy as np
 import cv2
-from track_sam2 import HProvider, img_to_court, L, W
+from track_sam2 import HProvider, img_to_court, L, W, pick_device
 
 def torso_color(frame, box):
     x1, y1, x2, y2 = box
@@ -35,6 +35,7 @@ def main():
     ap.add_argument('--model', default='yolov10s.pt'); ap.add_argument('--imgsz', type=int, default=1280); ap.add_argument('--stride', type=int, default=3)
     ap.add_argument('--start', type=float, default=0.0); ap.add_argument('--end', type=float, default=1e9); ap.add_argument('--conf', type=float, default=0.25)
     ap.add_argument('--margin', type=float, default=0.7, help='コート外の許容 (m)')
+    ap.add_argument('--device', default='auto', help="'auto'（GPU があれば使う）/ 'cpu' / 'xpu' / GPU 番号 '0'")
     a = ap.parse_args()
 
     from ultralytics import YOLO
@@ -53,7 +54,9 @@ def main():
     f0 = int(a.start * src_fps); f1 = min(nframes, int(a.end * src_fps)) if nframes else int(a.end * src_fps)
     cap.set(cv2.CAP_PROP_POS_FRAMES, f0)
     model = YOLO(a.model)
-    print(f'YOLO {a.model} 読み込み完了。{fw}x{fh} {src_fps:.1f}fps, フレーム {f0}〜{f1}, stride {a.stride}（約 {src_fps/a.stride:.1f} fps で追跡）', flush=True)
+    device = pick_device(a.device)
+    if device == 'cuda': device = '0'
+    print(f'YOLO {a.model} 読み込み完了（device={device}）。{fw}x{fh} {src_fps:.1f}fps, フレーム {f0}〜{f1}, stride {a.stride}（約 {src_fps/a.stride:.1f} fps で追跡）', flush=True)
 
     tracks = {}   # tid -> {'pts':[(t,x,y,u,v)], 'cols':[]}
     ball_obs = [] # (t,x,y,tid_near)
@@ -66,7 +69,7 @@ def main():
             fi += 1; continue
         t = fi / src_fps
         H = hp.at(t)
-        res = model.track(frame, persist=True, tracker='bytetrack.yaml', imgsz=a.imgsz, conf=a.conf, classes=[0, 32], verbose=False)[0]
+        res = model.track(frame, persist=True, tracker='bytetrack.yaml', imgsz=a.imgsz, conf=a.conf, classes=[0, 32], device=device, verbose=False)[0]
         cur = []
         if res.boxes is not None and len(res.boxes):
             xyxy = res.boxes.xyxy.cpu().numpy(); cls = res.boxes.cls.cpu().numpy().astype(int); ids = res.boxes.id.cpu().numpy().astype(int) if res.boxes.id is not None else np.full(len(cls), -1)

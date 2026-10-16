@@ -83,7 +83,7 @@ def main():
     ap.add_argument('--epochs', type=int, default=60)
     ap.add_argument('--imgsz', type=int, default=960, help='学習時の画像サイズ。ボールが小さいので 960〜1280 推奨（CPU なら 960）')
     ap.add_argument('--batch', type=int, default=4)
-    ap.add_argument('--device', default='cpu', help="'cpu' または GPU 番号 '0'")
+    ap.add_argument('--device', default='auto', help="'auto'（GPU があれば使う）/ 'cpu' / 'xpu' / GPU 番号 '0'")
     ap.add_argument('--out', default='runs/courttrace')
     ap.add_argument('--min-images', type=int, default=10, help='これより少ない枚数では学習しない（少なすぎると精度が落ちるため）')
     a = ap.parse_args()
@@ -98,8 +98,12 @@ def main():
                  f'（どうしても試す場合は --min-images 1 を付けて実行）')
 
     name = time.strftime('%Y%m%d_%H%M')
+    from track_sam2 import pick_device
+    device = pick_device(a.device)
+    if device == 'cuda': device = '0'
+    print(f'学習デバイス: {device}')
     model = YOLO(a.model)
-    results = model.train(data=str(yaml), epochs=a.epochs, imgsz=a.imgsz, batch=a.batch, device=a.device, project=a.out, name=name,
+    results = model.train(data=str(yaml), epochs=a.epochs, imgsz=a.imgsz, batch=a.batch, device=device, project=a.out, name=name,
                 # small dataset: gentle augmentation, freeze nothing, keep pretrained "person"/"sports ball" knowledge
                 lr0=0.002, warmup_epochs=2, close_mosaic=10, degrees=0, shear=0, perspective=0, flipud=0, fliplr=0.5,
                 hsv_h=0.01, hsv_s=0.4, hsv_v=0.3, mosaic=0.8, mixup=0.0, patience=30, workers=2, verbose=True)

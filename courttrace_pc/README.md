@@ -72,3 +72,16 @@ venv\Scripts\python courttrace_pc\train_players.py "courttrace_labels_XXXX.zip" 
   - 自分だけ: Webアプリ「AI自動解析 → カスタム学習モデル」でこのファイルを選ぶ（ブラウザに保存されます）。
   - 全員に配る: GitHub の courttrace リポジトリに `model/custom.onnx` としてアップロードすると自動で使われます。
 - 学習したモデルは「審判」を人物と区別するので、審判はボードに出なくなります。
+
+## 6. GPU で動かす
+
+- `--device` を省略（= `auto`）すると、NVIDIA（CUDA）→ Intel GPU（XPU）→ CPU の順に自動で選びます。3 つのスクリプト共通です。
+- Intel 内蔵 GPU（Core Ultra の Arc Graphics など）を使うには、PyTorch を XPU 版に差し替えます（約 1 GB）:
+
+```bat
+venv\Scripts\python -m pip install --upgrade torch torchvision --index-url https://download.pytorch.org/whl/xpu
+venv\Scripts\python -c "import torch; print(torch.xpu.is_available())"
+```
+
+- 目安（MSI Cubi NUC AI+ / Core Ultra 7 355、1080p30）: YOLO v10s 1280px で CPU 168ms → XPU 58ms/フレーム、SAM 2 tiny の追跡で CPU 1.96s → XPU 0.78s/フレーム。
+- SAM 2 の読み込み時に「Skipping the post-processing step」と出るのは CUDA 専用の後処理が無いだけで、結果には影響しません。

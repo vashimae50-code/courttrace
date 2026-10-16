@@ -4,7 +4,7 @@
 
 使い方:
   python track_sam2.py --video 試合.mp4 --project 試合.courttrace.json --out 試合.tracked.json
-  オプション: --fps 6 (追跡する1秒あたりのフレーム数) --start 0 --end 60 (秒) --model tiny|small --device cpu|cuda
+  オプション: --fps 6 (追跡する1秒あたりのフレーム数) --start 0 --end 60 (秒) --model tiny|small --device auto|cpu|cuda|xpu
 
 入力JSONに必要なもの:
   prompts : Webアプリ「手がかりを付ける」で付けた印 [{entity:'A4'|'ball', t, u, v}]
@@ -112,6 +112,17 @@ def extract_frames(video, out_dir, t0, t1, fps, max_w=1280):
     return times, dur
 
 # ---------------- SAM 2
+def pick_device(d):
+    """'auto' なら GPU（CUDA → Intel XPU）があればそれを、なければ CPU を使う。"""
+    import torch
+    if d != 'auto':
+        return d
+    if torch.cuda.is_available():
+        return 'cuda'
+    if hasattr(torch, 'xpu') and torch.xpu.is_available():
+        return 'xpu'
+    return 'cpu'
+
 def load_predictor(model, device):
     import torch
     from sam2.build_sam import build_sam2_video_predictor
@@ -128,8 +139,11 @@ def load_predictor(model, device):
             break
     else:
         sys.exit(f"チェックポイントが見つかりません: {fname}  (https://dl.fbaipublicfiles.com/segment_anything_2/092824/{fname})")
+    device = pick_device(device)
     if device == 'cuda' and not torch.cuda.is_available():
         print('CUDA が使えないため CPU で実行します'); device = 'cpu'
+    if device == 'xpu' and not (hasattr(torch, 'xpu') and torch.xpu.is_available()):
+        print('Intel GPU (XPU) が使えないため CPU で実行します'); device = 'cpu'
     torch.set_num_threads(max(1, os.cpu_count() or 4))
     pred = build_sam2_video_predictor(cfg, path, device=device)
     return pred, device
@@ -149,7 +163,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--video', required=True); ap.add_argument('--project', required=True); ap.add_argument('--out', required=True)
     ap.add_argument('--fps', type=float, default=6.0); ap.add_argument('--start', type=float, default=0.0); ap.add_argument('--end', type=float, default=1e9)
-    ap.add_argument('--model', default='tiny', choices=['tiny', 'small', 'base']); ap.add_argument('--device', default='cpu')
+    ap.add_argument('--model', default='tiny', choices=['tiny', 'small', 'base']); ap.add_argument('--device', default='auto', help="'auto'（GPU があれば使う）/ 'cpu' / 'cuda' / 'xpu'")
     ap.add_argument('--chunk', type=float, default=20.0, help='一度に追跡する秒数（メモリ節約）')
     ap.add_argument('--keep-frames', action='store_true')
     a = ap.parse_args()
